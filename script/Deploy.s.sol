@@ -1,70 +1,90 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
-import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
+import {CredentialRegistryV2} from "../src/CredentialRegistryV2.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
-import {Semaphore} from "semaphore-protocol/Semaphore.sol";
-import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
 import {Script, console} from "forge-std/Script.sol";
-
-contract Token is ERC20 {
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address mintTo,
-        uint256 mintAmount
-    ) ERC20(name_, symbol_){
-        _mint(mintTo, mintAmount);
-    }
-}
-
-contract DeployDev is Script {
-    function run() public {
-        address tlsnVerifierAddress = 0x3c50f7055D804b51e506Bc1EA7D082cB1548376C;
-        address deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
-
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Semaphore semaphore;
-            if (vm.envAddress('SEMAPHORE_ADDRESS') != address(0)) {
-                semaphore = Semaphore(vm.envAddress('SEMAPHORE_ADDRESS'));
-            } else {
-                revert("Semaphore address is not provided");
-            }
-            CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifierAddress);
-            Token bringToken = new Token("Bring", "BRING", deployer, 10**32);
-        vm.stopBroadcast();
-
-        console.log("Registry:", address(registry));
-        console.log("Bring Token:", address(bringToken));
-    }
-}
-
-contract DeployToken is Script {
-    function run() public {
-        address deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Token bringToken = new Token("Bring", "BRING", deployer, 10**32);
-        vm.stopBroadcast();
-        console.log("Bring Token:", address(bringToken));
-    }
-}
 
 contract Deploy is Script {
     function run() public {
-        address tlsnVerifierAddress = 0x7043BE13423Ae8Fc371B8B18AEB2A40582f9CD69;
+        address verifierAddress = vm.envAddress("VERIFIER_ADDRESS");
+        address semaphoreAddress = vm.envAddress("SEMAPHORE_ADDRESS");
+
+        require(verifierAddress != address(0), "VERIFIER_ADDRESS required");
+        require(semaphoreAddress != address(0), "SEMAPHORE_ADDRESS required");
 
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Semaphore semaphore;
-            if (vm.envAddress('SEMAPHORE_ADDRESS') != address(0)) {
-                semaphore = Semaphore(vm.envAddress('SEMAPHORE_ADDRESS'));
-            } else {
-                revert("SEMAPHORE_ADDRESS should be provided");
-            }
-            CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifierAddress);
+            CredentialRegistryV2 registry = new CredentialRegistryV2(
+                ISemaphore(semaphoreAddress),
+                verifierAddress
+            );
         vm.stopBroadcast();
 
-        console.log("Semaphore:", address(semaphore));
-        console.log("Registry:", address(registry));
+        console.log("CredentialRegistryV2:", address(registry));
+        console.log("Semaphore:", semaphoreAddress);
+        console.log("Verifier:", verifierAddress);
+    }
+}
+
+contract CreateScoreGroup is Script {
+    function run() public {
+        address registryAddress = vm.envAddress("REGISTRY_ADDRESS");
+        uint256 score = vm.envUint("SCORE");
+
+        require(registryAddress != address(0), "REGISTRY_ADDRESS required");
+
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+            CredentialRegistryV2 registry = CredentialRegistryV2(registryAddress);
+            registry.createScoreGroup(score);
+        vm.stopBroadcast();
+
+        console.log("Score group created for score:", score);
+    }
+}
+
+contract RegisterApp is Script {
+    function run() public {
+        address registryAddress = vm.envAddress("REGISTRY_ADDRESS");
+        uint256 appId = vm.envUint("APP_ID");
+        address appAdmin = vm.envAddress("APP_ADMIN_ADDRESS");
+        uint256 recoveryDelay = vm.envUint("RECOVERY_DELAY");
+
+        require(registryAddress != address(0), "REGISTRY_ADDRESS required");
+        require(appId > 0, "APP_ID required");
+        require(appAdmin != address(0), "APP_ADMIN_ADDRESS required");
+        require(recoveryDelay >= 1 days, "RECOVERY_DELAY must be at least 1 day");
+
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+            CredentialRegistryV2 registry = CredentialRegistryV2(registryAddress);
+            registry.registerApp(appId, appAdmin, recoveryDelay);
+        vm.stopBroadcast();
+
+        console.log("App registered:");
+        console.log("  App ID:", appId);
+        console.log("  Admin:", appAdmin);
+        console.log("  Recovery Delay:", recoveryDelay, "seconds");
+    }
+}
+
+/// @notice Setup standard score groups (0, 10, 20, 30, 40, 50, etc.)
+contract SetupScoreGroups is Script {
+    function run() public {
+        address registryAddress = vm.envAddress("REGISTRY_ADDRESS");
+
+        require(registryAddress != address(0), "REGISTRY_ADDRESS required");
+
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+            CredentialRegistryV2 registry = CredentialRegistryV2(registryAddress);
+
+            // Create score groups: 0, 10, 20, 30, 40, 50
+            registry.createScoreGroup(0);
+            registry.createScoreGroup(10);
+            registry.createScoreGroup(20);
+            registry.createScoreGroup(30);
+            registry.createScoreGroup(40);
+            registry.createScoreGroup(50);
+        vm.stopBroadcast();
+
+        console.log("Score groups created for scores: 0, 10, 20, 30, 40, 50");
     }
 }

@@ -66,3 +66,5 @@ deploy-idcard-full:
 	script/DeployIdCard.s.sol:DeployIdCardWithRegistry \
 	--rpc-url $$BASE_RPC_URL \
 	--broadcast --verify -vvvv
+
+verify:
