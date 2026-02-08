@@ -55,6 +55,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// while allowing different Semaphore commitments across groups.
     mapping(bytes32 => bool) public credentialRegistered;
 
+    /// @notice Maps registration hash to the Semaphore identity commitment that was registered.
+    /// Used during recovery to look up the old commitment for removal from the Semaphore group.
+    mapping(bytes32 registrationHash => uint256) public registeredCommitments;
+
+    /// @notice Maps registration hash to a pending recovery request.
+    /// A non-zero executeAfter indicates an active pending recovery.
+    mapping(bytes32 registrationHash => RecoveryRequest) public pendingRecoveries;
+
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
     /// @param nullifierVerifier_ Address of the NullifierVerifier contract.
@@ -145,6 +153,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(trustedVerifiers[signer], "Untrusted verifier");
 
         credentialRegistered[registrationHash] = true;
+        registeredCommitments[registrationHash] = attestation_.semaphoreIdentityCommitment;
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialRegistered(
             attestation_.credentialGroupId,
@@ -252,7 +261,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function registerApp(uint256 appId_) public onlyOwner {
         require(appId_ > 0, "App ID cannot equal zero");
         require(apps[appId_].status == AppStatus.UNDEFINED, "App already exists");
-        apps[appId_] = App(AppStatus.ACTIVE);
+        apps[appId_] = App(AppStatus.ACTIVE, 0);
         emit AppRegistered(appId_);
     }
 
@@ -286,5 +295,121 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(nullifierVerifier_ != address(0), "Invalid nullifier verifier address");
         nullifierVerifier = nullifierVerifier_;
         emit NullifierVerifierSet(nullifierVerifier_);
+    }
+
+    /// @notice Sets the recovery timelock duration for an app.
+    /// @dev Recovery is disabled by default (timelock = 0). The owner must explicitly
+    ///      enable it by setting a positive timelock.
+    /// @param appId_ The app ID to configure.
+    /// @param recoveryTimelock_ The timelock duration in seconds (must be > 0).
+    function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public onlyOwner {
+        require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
+        require(recoveryTimelock_ > 0, "Recovery timelock must be positive");
+        apps[appId_].recoveryTimelock = recoveryTimelock_;
+        emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Key recovery
+    // ──────────────────────────────────────────────
+
+    /// @notice Initiates recovery for a credential (bytes signature variant).
+    /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
+    ///      and delegates to the main initiateRecovery implementation.
+    /// @param attestation_ Attestation with the same credentialId but a new commitment.
+    /// @param signature_ 65-byte ECDSA signature (r || s || v).
+    /// @param merkleProofSiblings_ Merkle proof siblings for removing the old commitment from
+    ///        the Semaphore group.
+    function initiateRecovery(
+        Attestation memory attestation_,
+        bytes memory signature_,
+        uint256[] calldata merkleProofSiblings_
+    ) public {
+        require(signature_.length == 65, "Bad signature length");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature_, 0x20))
+            s := mload(add(signature_, 0x40))
+            v := byte(0, mload(add(signature_, 0x60)))
+        }
+        initiateRecovery(attestation_, v, r, s, merkleProofSiblings_);
+    }
+
+    /// @notice Initiates recovery for a credential.
+    /// @dev The verifier re-derives the same credentialId from the user's OAuth
+    ///      credentials and signs an attestation with a new Semaphore commitment. The old
+    ///      commitment is immediately removed from the Semaphore group. The new commitment
+    ///      is queued with the app's timelock and can be finalized via executeRecovery().
+    ///
+    ///      During the timelock period the user has no valid commitment in the group
+    ///      (intentional — prevents use of a compromised identity).
+    /// @param attestation_ Attestation with the same credentialId but a new semaphoreIdentityCommitment.
+    /// @param v ECDSA recovery parameter.
+    /// @param r ECDSA signature component.
+    /// @param s ECDSA signature component.
+    /// @param merkleProofSiblings_ Merkle proof siblings for the old commitment in the Semaphore group.
+    function initiateRecovery(
+        Attestation memory attestation_,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint256[] calldata merkleProofSiblings_
+    ) public {
+        CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
+        bytes32 registrationHash =
+            keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
+
+        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
+        require(attestation_.registry == address(this), "Wrong attestation message");
+        require(credentialRegistered[registrationHash], "Credential not registered");
+        require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery already pending");
+
+        uint256 recoveryTimelock = apps[attestation_.appId].recoveryTimelock;
+        require(recoveryTimelock > 0, "Recovery not enabled for app");
+
+        (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+        require(trustedVerifiers[signer], "Untrusted verifier");
+
+        uint256 oldCommitment = registeredCommitments[registrationHash];
+        SEMAPHORE.removeMember(_credentialGroup.semaphoreGroupId, oldCommitment, merkleProofSiblings_);
+
+        uint256 executeAfter = block.timestamp + recoveryTimelock;
+        pendingRecoveries[registrationHash] = RecoveryRequest({
+            credentialGroupId: attestation_.credentialGroupId,
+            appId: attestation_.appId,
+            newCommitment: attestation_.semaphoreIdentityCommitment,
+            executeAfter: executeAfter
+        });
+
+        emit RecoveryInitiated(
+            registrationHash,
+            attestation_.credentialGroupId,
+            oldCommitment,
+            attestation_.semaphoreIdentityCommitment,
+            executeAfter
+        );
+    }
+
+    /// @notice Finalizes a pending recovery after the timelock has expired.
+    /// @dev Adds the new commitment to the Semaphore group, updates the stored commitment,
+    ///      and clears the pending recovery. Can be called by anyone once the timelock expires.
+    /// @param registrationHash_ The registration hash identifying the credential being recovered.
+    function executeRecovery(bytes32 registrationHash_) public {
+        RecoveryRequest memory request = pendingRecoveries[registrationHash_];
+        require(request.executeAfter != 0, "No pending recovery");
+        require(block.timestamp >= request.executeAfter, "Recovery timelock not expired");
+
+        CredentialGroup memory _credentialGroup = credentialGroups[request.credentialGroupId];
+        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
+        require(apps[request.appId].status == AppStatus.ACTIVE, "App is not active");
+
+        SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, request.newCommitment);
+        registeredCommitments[registrationHash_] = request.newCommitment;
+        delete pendingRecoveries[registrationHash_];
+
+        emit RecoveryExecuted(registrationHash_, request.newCommitment);
     }
 }

@@ -43,6 +43,15 @@ contract CredentialRegistryTest is Test {
     event NullifierVerifierSet(address indexed verifier);
     event AppRegistered(uint256 indexed appId);
     event AppSuspended(uint256 indexed appId);
+    event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
+    event RecoveryInitiated(
+        bytes32 indexed registrationHash,
+        uint256 indexed credentialGroupId,
+        uint256 oldCommitment,
+        uint256 newCommitment,
+        uint256 executeAfter
+    );
+    event RecoveryExecuted(bytes32 indexed registrationHash, uint256 newCommitment);
 
     function setUp() public {
         owner = address(this);
@@ -57,17 +66,18 @@ contract CredentialRegistryTest is Test {
         registry.registerApp(DEFAULT_APP_ID);
 
         // Mock INullifierVerifier.verifyProof to succeed (no revert) by default
-        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(INullifierVerifier.verifyProof.selector), abi.encode());
+        vm.mockCall(
+            mockNullifierVerifier, abi.encodeWithSelector(INullifierVerifier.verifyProof.selector), abi.encode()
+        );
     }
 
     // --- Helper functions ---
 
-    function _createAttestation(
-        uint256 credentialGroupId,
-        uint256 appId,
-        bytes32 credentialId,
-        uint256 commitment
-    ) internal view returns (ICredentialRegistry.Attestation memory) {
+    function _createAttestation(uint256 credentialGroupId, uint256 appId, bytes32 credentialId, uint256 commitment)
+        internal
+        view
+        returns (ICredentialRegistry.Attestation memory)
+    {
         return ICredentialRegistry.Attestation({
             registry: address(registry),
             credentialGroupId: credentialGroupId,
@@ -685,5 +695,221 @@ contract CredentialRegistryTest is Test {
 
         vm.expectRevert("Credential group is inactive");
         registry.score(0, proofs);
+    }
+
+    // --- Recovery timelock tests ---
+
+    function testSetAppRecoveryTimelock() public {
+        uint256 appId = 42;
+        registry.registerApp(appId);
+
+        vm.expectEmit(true, false, false, true);
+        emit AppRecoveryTimelockSet(appId, 1 days);
+
+        registry.setAppRecoveryTimelock(appId, 1 days);
+
+        (, uint256 timelock) = registry.apps(appId);
+        assertEq(timelock, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockOnlyOwner() public {
+        uint256 appId = 42;
+        registry.registerApp(appId);
+
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setAppRecoveryTimelock(appId, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockAppNotActive() public {
+        vm.expectRevert("App is not active");
+        registry.setAppRecoveryTimelock(999, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockZero() public {
+        uint256 appId = 42;
+        registry.registerApp(appId);
+
+        vm.expectRevert("Recovery timelock must be positive");
+        registry.setAppRecoveryTimelock(appId, 0);
+    }
+
+    // --- Initiate recovery tests ---
+
+    function _initiateRecovery(
+        uint256 credentialGroupId,
+        uint256 appId,
+        bytes32 credentialId,
+        uint256 newCommitment,
+        uint256[] memory siblings
+    ) internal {
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, appId, credentialId, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        registry.initiateRecovery(att, v, r, s, siblings);
+    }
+
+    function testInitiateRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        bytes32 registrationHash = keccak256(abi.encode(address(registry), credentialGroupId, credentialId));
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectEmit(true, true, false, true);
+        emit RecoveryInitiated(
+            registrationHash, credentialGroupId, oldCommitment, newCommitment, block.timestamp + 1 days
+        );
+
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        (uint256 reqGroupId, uint256 reqAppId, uint256 reqNewCommitment, uint256 reqExecuteAfter) =
+            registry.pendingRecoveries(registrationHash);
+        assertEq(reqGroupId, credentialGroupId);
+        assertEq(reqAppId, DEFAULT_APP_ID);
+        assertEq(reqNewCommitment, newCommitment);
+        assertEq(reqExecuteAfter, block.timestamp + 1 days);
+    }
+
+    function testInitiateRecoveryWithBytes() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256[] memory siblings = new uint256[](0);
+        registry.initiateRecovery(att, signature, siblings);
+
+        bytes32 registrationHash = keccak256(abi.encode(address(registry), credentialGroupId, credentialId));
+        (,, uint256 reqNewCommitment,) = registry.pendingRecoveries(registrationHash);
+        assertEq(reqNewCommitment, newCommitment);
+    }
+
+    function testInitiateRecoveryNotRegistered() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("Credential not registered");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+    }
+
+    function testInitiateRecoveryAlreadyPending() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment1 = TestUtils.semaphoreCommitment(67890);
+        uint256 newCommitment2 = TestUtils.semaphoreCommitment(11111);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment1, siblings);
+
+        vm.expectRevert("Recovery already pending");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment2, siblings);
+    }
+
+    function testInitiateRecoveryNotEnabled() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("Recovery not enabled for app");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+    }
+
+    // --- Execute recovery tests ---
+
+    function testExecuteRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash = keccak256(abi.encode(address(registry), credentialGroupId, credentialId));
+
+        vm.warp(block.timestamp + 1 days);
+
+        vm.expectEmit(true, false, false, true);
+        emit RecoveryExecuted(registrationHash, newCommitment);
+
+        registry.executeRecovery(registrationHash);
+
+        assertEq(registry.registeredCommitments(registrationHash), newCommitment);
+
+        (,,, uint256 reqExecuteAfter) = registry.pendingRecoveries(registrationHash);
+        assertEq(reqExecuteAfter, 0);
+    }
+
+    function testExecuteRecoveryTimelockNotExpired() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 100);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash = keccak256(abi.encode(address(registry), credentialGroupId, credentialId));
+
+        vm.warp(block.timestamp + 1 days - 1);
+
+        vm.expectRevert("Recovery timelock not expired");
+        registry.executeRecovery(registrationHash);
+    }
+
+    function testExecuteRecoveryNoPending() public {
+        bytes32 fakeHash = keccak256("no-such-recovery");
+
+        vm.expectRevert("No pending recovery");
+        registry.executeRecovery(fakeHash);
     }
 }

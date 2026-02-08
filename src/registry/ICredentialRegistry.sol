@@ -24,6 +24,14 @@ interface ICredentialRegistry {
 
     struct App {
         AppStatus status;
+        uint256 recoveryTimelock;
+    }
+
+    struct RecoveryRequest {
+        uint256 credentialGroupId;
+        uint256 appId;
+        uint256 newCommitment;
+        uint256 executeAfter;
     }
 
     struct CredentialGroupProof {
