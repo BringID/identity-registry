@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users join credential groups via TLSN-verified attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; the `score()` function aggregates scores across multiple credential proofs.
+BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users join credential groups via verifier-signed attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; the `score()` function aggregates scores across multiple credential proofs.
 
 Target chain: Base (chain ID 84532). Built with Foundry and Solidity ^0.8.23.
 
@@ -47,21 +47,25 @@ make deploy-idcard        # IdCard contract to Base
 
 ### Core contracts (`src/registry/`)
 
-- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `joinGroup()` with a TLSN-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores.
-- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `Attestation` (registry + credentialGroupId + idHash + commitment), `CredentialGroupProof`.
+- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `joinGroup()` with a verifier-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof + nullifier proof (via NullifierVerifier) and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.).
+- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status), `Attestation` (registry + credentialGroupId + appId + idHash + blindedId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
+- **IVerifier.sol** — Interface for the NullifierVerifier contract: `verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes proof)`.
 - **Events.sol** — Event declarations.
 
 ### Key design decisions
 
 - **Ownable2Step** (OpenZeppelin) for admin operations — two-step ownership transfer.
-- **Nonce deduplication**: `keccak256(registry, credentialGroupId, idHash)` prevents the same user from joining a group twice, but allows different Semaphore commitments across groups.
+- **Credential deduplication**: `credentialRegistered[keccak256(registry, credentialGroupId, blindedId)]` prevents the same user from joining a group twice, but allows different Semaphore commitments across groups.
 - **Scope binding**: `validateProof` ties proofs to `msg.sender` + a context value, preventing proof replay across callers.
+- **App-specific identities**: each app derives a unique Semaphore commitment from the user's `secret_base + app_id`. The NullifierVerifier (Noir circuit) proves the nullifier was correctly derived for that app, preventing cross-app proof replay.
+- **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.
 - Semaphore groups are created on-chain via the Semaphore contract; the registry maps its own credential group IDs to Semaphore group IDs.
 
 ### Scripts (`script/`)
 
-- **Deploy.s.sol** — `DeployDev` (dev with token), `DeployToken`, `Deploy` (production). All require `SEMAPHORE_ADDRESS` env var.
+- **Deploy.s.sol** — `DeployDev` (dev with token), `DeployToken`, `Deploy` (production). Require `SEMAPHORE_ADDRESS` and `NULLIFIER_VERIFIER_ADDRESS` env vars.
 - **CredentialGroups.s.sol** — Batch-creates credential groups with predefined scores.
+- **RegisterApps.s.sol** — Batch-registers apps.
 - **MockSignature.s.sol** — Generates test ECDSA signatures for attestations.
 
 ### Test infrastructure (`test/`)
@@ -84,6 +88,6 @@ GitHub Actions (`.github/workflows/test.yml`): format check → build with sizes
 
 ### Foundry config (`foundry.toml`)
 
-- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.**
+- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.** Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests).
 - Optimizer with 200 runs
 - Fuzz: 10 runs, 100 max rejections
