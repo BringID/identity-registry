@@ -17,8 +17,10 @@ event TrustedVerifierAdded(address indexed verifier);
 event TrustedVerifierRemoved(address indexed verifier);
 event NullifierVerifierSet(address indexed verifier);
 
-event AppRegistered(uint256 indexed appId);
+event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
 event AppSuspended(uint256 indexed appId);
+event AppScorerSet(uint256 indexed appId, address indexed scorer);
+event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
 event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
 
 event RecoveryInitiated(

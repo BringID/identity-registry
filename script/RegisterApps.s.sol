@@ -14,11 +14,12 @@ contract RegisterApps is Script {
             revert("CREDENTIAL_REGISTRY_ADDRESS should be provided");
         }
 
-        registry.registerApp(1);
-        registry.registerApp(2);
-        registry.registerApp(3);
+        uint256 appId1 = registry.registerApp(0);
+        uint256 appId2 = registry.registerApp(0);
+        uint256 appId3 = registry.registerApp(0);
         vm.stopBroadcast();
 
-        console.log("Registered apps 1, 2, 3 on registry:", address(registry));
+        console.log("Registered app IDs:", appId1, appId2, appId3);
+        console.log("On registry:", address(registry));
     }
 }
