@@ -17,7 +17,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     mapping(uint256 credentialGroupId => CredentialGroup) public credentialGroups;
     mapping(uint256 appId => App) public apps;
     mapping(bytes32 nonce => bool isConsumed) public nonceUsed;
-    mapping(uint256 nullifier => bool isUsed) public nullifierUsed;
 
     constructor(ISemaphore semaphore_, address TLSNVerifier_, address nullifierVerifier_) {
         require(TLSNVerifier_ != address(0), "Invalid TLSN Verifier address");
@@ -83,11 +82,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(apps[proof_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(proof_.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context_))), "Wrong scope");
 
-        uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
-        require(!nullifierUsed[semaphoreNullifier], "Nullifier already used");
-
         SEMAPHORE.validateProof(_credentialGroup.semaphoreGroupId, proof_.semaphoreProof);
 
+        uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
         bytes32[] memory publicInputs = new bytes32[](3);
         publicInputs[0] = bytes32(proof_.appId);
         publicInputs[1] = bytes32(proof_.semaphoreProof.scope);
@@ -96,7 +93,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             IVerifier(nullifierVerifier).verify(proof_.bringIdProof, publicInputs), "BringID proof verification failed"
         );
 
-        nullifierUsed[semaphoreNullifier] = true;
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, semaphoreNullifier);
     }
 

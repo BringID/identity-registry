@@ -84,5 +84,6 @@ GitHub Actions (`.github/workflows/test.yml`): format check → build with sizes
 
 ### Foundry config (`foundry.toml`)
 
-- `via_ir = true`, optimizer with 200 runs
+- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.**
+- Optimizer with 200 runs
 - Fuzz: 10 runs, 100 max rejections

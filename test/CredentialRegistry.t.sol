@@ -572,30 +572,6 @@ contract CredentialRegistryTest is Test {
         registry.validateProof(0, proof);
     }
 
-    function testValidateProofNullifierAlreadyUsed() public {
-        uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-
-        uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, keccak256("test-id"), keccak256("blinded-id"), commitment);
-
-        address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
-
-        ICredentialRegistry.CredentialGroupProof memory proof =
-            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
-
-        // First validation succeeds
-        vm.prank(prover);
-        registry.validateProof(0, proof);
-
-        // Second validation with same nullifier should fail
-        vm.expectRevert("Nullifier already used");
-        vm.prank(prover);
-        registry.validateProof(0, proof);
-    }
-
     function testValidateProofBringIdFails() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
