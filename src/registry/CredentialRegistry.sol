@@ -65,6 +65,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// A non-zero executeAfter indicates an active pending recovery.
     mapping(bytes32 registrationHash => RecoveryRequest) public pendingRecoveries;
 
+    /// @notice Array of all registered credential group IDs (for enumeration).
+    uint256[] public credentialGroupIds;
+
     /// @notice Auto-incrementing app ID counter. Next app will get this ID.
     uint256 public nextAppId = 1;
 
@@ -100,6 +103,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param appId_ The app ID to check.
     function appIsActive(uint256 appId_) public view returns (bool) {
         return apps[appId_].status == AppStatus.ACTIVE;
+    }
+
+    /// @notice Returns all registered credential group IDs.
+    function getCredentialGroupIds() external view returns (uint256[] memory) {
+        return credentialGroupIds;
     }
 
     // ──────────────────────────────────────────────
@@ -242,6 +250,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         CredentialGroup memory _credentialGroup =
             CredentialGroup(SEMAPHORE.createGroup(), ICredentialRegistry.CredentialGroupStatus.ACTIVE);
         credentialGroups[credentialGroupId_] = _credentialGroup;
+        credentialGroupIds.push(credentialGroupId_);
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
     }
 
