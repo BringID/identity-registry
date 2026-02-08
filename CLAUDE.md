@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users join credential groups via verifier-signed attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; the `score()` function aggregates scores across multiple credential proofs.
+BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users register credentials via verifier-signed attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; the `score()` function aggregates scores across multiple credential proofs.
 
 Target chain: Base (chain ID 84532). Built with Foundry and Solidity ^0.8.23.
 
@@ -55,7 +55,7 @@ make deploy-idcard        # IdCard contract to Base
 ### Key design decisions
 
 - **Ownable2Step** (OpenZeppelin) for admin operations — two-step ownership transfer.
-- **Credential deduplication**: `credentialRegistered[keccak256(registry, credentialGroupId, credentialId)]` prevents the same user from joining a group twice, but allows different Semaphore commitments across groups.
+- **Credential deduplication**: `credentialRegistered[keccak256(registry, credentialGroupId, credentialId)]` prevents the same user from registering a credential twice, but allows different Semaphore commitments across groups.
 - **Scope binding**: `validateProof` ties proofs to `msg.sender` + a context value, preventing proof replay across callers.
 - **App-specific identities**: each app derives a unique Semaphore commitment from the user's `secret_base + app_id`. The NullifierVerifier (Noir circuit) proves the nullifier was correctly derived for that app, preventing cross-app proof replay.
 - **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.
