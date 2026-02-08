@@ -44,7 +44,6 @@ interface ICredentialRegistry {
     struct Attestation {
         address registry;
         uint256 credentialGroupId;
-        uint256 appId;
         bytes32 credentialId;
         uint256 semaphoreIdentityCommitment;
     }

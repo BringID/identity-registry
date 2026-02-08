@@ -126,13 +126,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      1. Compute registration hash from (registry, credentialGroupId, credentialId) — excludes
     ///         the Semaphore commitment so the same user (credentialId) cannot register the same
     ///         credential twice, even with different commitments.
-    ///      2. Verify the credential group and app are active.
+    ///      2. Verify the credential group is active.
     ///      3. Verify the attestation was signed by a trusted verifier.
     ///      4. Mark the credential as registered and add the commitment to the Semaphore group.
     /// @param attestation_ The attestation struct containing:
     ///        - registry: must match this contract's address
     ///        - credentialGroupId: the group to join
-    ///        - appId: the app this identity belongs to (must be active)
     ///        - credentialId: app-specific credential identity (used for dedup)
     ///        - semaphoreIdentityCommitment: the Semaphore identity commitment to register
     /// @param v ECDSA recovery parameter.
@@ -144,7 +143,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
 
         require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
         require(!credentialRegistered[registrationHash], "Credential already registered");
 
@@ -157,7 +155,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialRegistered(
             attestation_.credentialGroupId,
-            attestation_.appId,
             attestation_.semaphoreIdentityCommitment,
             attestation_.credentialId,
             registrationHash,
@@ -318,11 +315,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      and delegates to the main initiateRecovery implementation.
     /// @param attestation_ Attestation with the same credentialId but a new commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
+    /// @param appId_ The app whose recovery timelock governs this recovery.
     /// @param merkleProofSiblings_ Merkle proof siblings for removing the old commitment from
     ///        the Semaphore group.
     function initiateRecovery(
         Attestation memory attestation_,
         bytes memory signature_,
+        uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) public {
         require(signature_.length == 65, "Bad signature length");
@@ -334,7 +333,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             s := mload(add(signature_, 0x40))
             v := byte(0, mload(add(signature_, 0x60)))
         }
-        initiateRecovery(attestation_, v, r, s, merkleProofSiblings_);
+        initiateRecovery(attestation_, v, r, s, appId_, merkleProofSiblings_);
     }
 
     /// @notice Initiates recovery for a credential.
@@ -349,37 +348,53 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
+    /// @param appId_ The app whose recovery timelock governs this recovery.
     /// @param merkleProofSiblings_ Merkle proof siblings for the old commitment in the Semaphore group.
     function initiateRecovery(
         Attestation memory attestation_,
         uint8 v,
         bytes32 r,
         bytes32 s,
+        uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
-        bytes32 registrationHash =
-            keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
+        bytes32 registrationHash = keccak256(
+            abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId)
+        );
 
-        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
+        require(
+            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
+        require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
         require(credentialRegistered[registrationHash], "Credential not registered");
         require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery already pending");
+        require(apps[appId_].recoveryTimelock > 0, "Recovery not enabled for app");
 
-        uint256 recoveryTimelock = apps[attestation_.appId].recoveryTimelock;
-        require(recoveryTimelock > 0, "Recovery not enabled for app");
+        {
+            (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+            require(trustedVerifiers[signer], "Untrusted verifier");
+        }
 
-        (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-        require(trustedVerifiers[signer], "Untrusted verifier");
+        _executeInitiateRecovery(attestation_, appId_, registrationHash, merkleProofSiblings_);
+    }
 
+    function _executeInitiateRecovery(
+        Attestation memory attestation_,
+        uint256 appId_,
+        bytes32 registrationHash,
+        uint256[] calldata merkleProofSiblings_
+    ) internal {
         uint256 oldCommitment = registeredCommitments[registrationHash];
-        SEMAPHORE.removeMember(_credentialGroup.semaphoreGroupId, oldCommitment, merkleProofSiblings_);
+        SEMAPHORE.removeMember(
+            credentialGroups[attestation_.credentialGroupId].semaphoreGroupId, oldCommitment, merkleProofSiblings_
+        );
 
-        uint256 executeAfter = block.timestamp + recoveryTimelock;
+        uint256 executeAfter = block.timestamp + apps[appId_].recoveryTimelock;
         pendingRecoveries[registrationHash] = RecoveryRequest({
             credentialGroupId: attestation_.credentialGroupId,
-            appId: attestation_.appId,
+            appId: appId_,
             newCommitment: attestation_.semaphoreIdentityCommitment,
             executeAfter: executeAfter
         });
