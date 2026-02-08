@@ -48,8 +48,8 @@ contract CredentialRegistryTest is Test {
         // Register default app
         registry.registerApp(DEFAULT_APP_ID);
 
-        // Mock IVerifier.verify to return true by default
-        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(IVerifier.verify.selector), abi.encode(true));
+        // Mock IVerifier.verifyProof to succeed (no revert) by default
+        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(IVerifier.verifyProof.selector), abi.encode());
     }
 
     // --- Helper functions ---
@@ -583,13 +583,17 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        // Mock the nullifier verifier to return false
-        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(IVerifier.verify.selector), abi.encode(false));
+        // Mock the nullifier verifier to revert
+        vm.mockCallRevert(
+            mockNullifierVerifier,
+            abi.encodeWithSelector(IVerifier.verifyProof.selector),
+            abi.encodeWithSignature("ProofVerificationFailed()")
+        );
 
         ICredentialRegistry.CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
-        vm.expectRevert("BringID proof verification failed");
+        vm.expectRevert();
         vm.prank(prover);
         registry.validateProof(0, proof);
     }

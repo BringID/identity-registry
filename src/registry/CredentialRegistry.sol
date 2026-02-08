@@ -85,13 +85,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.validateProof(_credentialGroup.semaphoreGroupId, proof_.semaphoreProof);
 
         uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
-        bytes32[] memory publicInputs = new bytes32[](3);
-        publicInputs[0] = bytes32(proof_.appId);
-        publicInputs[1] = bytes32(proof_.semaphoreProof.scope);
-        publicInputs[2] = bytes32(semaphoreNullifier);
-        require(
-            IVerifier(nullifierVerifier).verify(proof_.bringIdProof, publicInputs), "BringID proof verification failed"
-        );
+        IVerifier(nullifierVerifier)
+            .verifyProof(bytes32(semaphoreNullifier), proof_.appId, proof_.semaphoreProof.scope, proof_.bringIdProof);
 
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, semaphoreNullifier);
     }

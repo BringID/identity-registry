@@ -2,5 +2,5 @@
 pragma solidity ^0.8.23;
 
 interface IVerifier {
-    function verify(bytes calldata proof, bytes32[] calldata publicInputs) external returns (bool);
+    function verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes calldata proof) external;
 }
