@@ -11,7 +11,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 /// @title CredentialRegistry
 /// @notice Main contract for the BringID privacy-preserving credential system.
 ///
-/// Users join credential groups via verifier-signed attestations, then prove membership
+/// Users register credentials via verifier-signed attestations, then prove membership
 /// using Semaphore zero-knowledge proofs. Each credential group carries a score;
 /// the `score()` function aggregates scores across multiple credential proofs.
 ///
@@ -46,10 +46,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     mapping(uint256 credentialGroupId => CredentialGroup) public credentialGroups;
 
     /// @notice Registry of apps. Each app has a status (UNDEFINED / ACTIVE / SUSPENDED).
-    /// Apps must be registered before users can join groups or submit proofs for them.
+    /// Apps must be registered before users can register credentials or submit proofs for them.
     mapping(uint256 appId => App) public apps;
 
-    /// @notice Tracks registered credentials to prevent duplicate group joins.
+    /// @notice Tracks registered credentials to prevent duplicate registrations.
     /// Key = keccak256(registry, credentialGroupId, credentialId), which ensures
     /// one credential per (credential group, app-specific credential identity) pair
     /// while allowing different Semaphore commitments across groups.
@@ -89,10 +89,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     // ──────────────────────────────────────────────
-    //  Group membership
+    //  Credential registration
     // ──────────────────────────────────────────────
 
-    /// @notice Join a credential group using a verifier-signed attestation (bytes signature variant).
+    /// @notice Register a credential using a verifier-signed attestation (bytes signature variant).
     /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
     ///      and delegates to the main registerCredential implementation.
     ///      The signature can be reused across all networks since it signs the attestation
@@ -112,12 +112,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         registerCredential(attestation_, v, r, s);
     }
 
-    /// @notice Join a credential group using a verifier-signed attestation.
+    /// @notice Register a credential using a verifier-signed attestation.
     /// @dev Validates the attestation and adds the user's Semaphore commitment to the
     ///      backing Semaphore group. The flow:
     ///      1. Compute registration hash from (registry, credentialGroupId, credentialId) — excludes
-    ///         the Semaphore commitment so the same user (credentialId) cannot join the same
-    ///         group twice, even with different commitments.
+    ///         the Semaphore commitment so the same user (credentialId) cannot register the same
+    ///         credential twice, even with different commitments.
     ///      2. Verify the credential group and app are active.
     ///      3. Verify the attestation was signed by a trusted verifier.
     ///      4. Mark the credential as registered and add the commitment to the Semaphore group.
@@ -234,7 +234,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
     }
 
-    /// @notice Suspends an active credential group, preventing new joins and proof validations.
+    /// @notice Suspends an active credential group, preventing new registrations and proof validations.
     /// @param credentialGroupId_ The credential group ID to suspend.
     function suspendCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
         require(
@@ -244,7 +244,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         credentialGroups[credentialGroupId_].status = CredentialGroupStatus.SUSPENDED;
     }
 
-    /// @notice Registers a new app, enabling users to join groups and submit proofs for it.
+    /// @notice Registers a new app, enabling users to register credentials and submit proofs for it.
     /// @dev App IDs are user-defined (not auto-incremented) and must be > 0.
     ///      Each app represents a consuming application that derives unique Semaphore
     ///      identities from users' secret bases.
@@ -256,7 +256,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit AppRegistered(appId_);
     }
 
-    /// @notice Suspends an active app, preventing new joins and proof validations for it.
+    /// @notice Suspends an active app, preventing new registrations and proof validations for it.
     /// @param appId_ The app ID to suspend.
     function suspendApp(uint256 appId_) public onlyOwner {
         require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
