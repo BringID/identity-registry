@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
-import {IVerifier} from "./IVerifier.sol";
+import {INullifierVerifier} from "./INullifierVerifier.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
@@ -186,7 +186,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.validateProof(_credentialGroup.semaphoreGroupId, proof_.semaphoreProof);
 
         uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
-        IVerifier(nullifierVerifier)
+        INullifierVerifier(nullifierVerifier)
             .verifyProof(bytes32(semaphoreNullifier), proof_.appId, proof_.semaphoreProof.scope, proof_.nullifierProof);
 
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, semaphoreNullifier);

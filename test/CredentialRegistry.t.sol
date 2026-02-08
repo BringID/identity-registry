@@ -4,7 +4,7 @@ pragma solidity ^0.8.23;
 import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
-import {IVerifier} from "../src/registry/IVerifier.sol";
+import {INullifierVerifier} from "../src/registry/INullifierVerifier.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
@@ -49,8 +49,8 @@ contract CredentialRegistryTest is Test {
         // Register default app
         registry.registerApp(DEFAULT_APP_ID);
 
-        // Mock IVerifier.verifyProof to succeed (no revert) by default
-        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(IVerifier.verifyProof.selector), abi.encode());
+        // Mock INullifierVerifier.verifyProof to succeed (no revert) by default
+        vm.mockCall(mockNullifierVerifier, abi.encodeWithSelector(INullifierVerifier.verifyProof.selector), abi.encode());
     }
 
     // --- Helper functions ---
@@ -618,7 +618,7 @@ contract CredentialRegistryTest is Test {
         // Mock the nullifier verifier to revert
         vm.mockCallRevert(
             mockNullifierVerifier,
-            abi.encodeWithSelector(IVerifier.verifyProof.selector),
+            abi.encodeWithSelector(INullifierVerifier.verifyProof.selector),
             abi.encodeWithSignature("ProofVerificationFailed()")
         );
 

@@ -49,7 +49,7 @@ make deploy-idcard        # IdCard contract to Base
 
 - **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `joinGroup()` with a verifier-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof + nullifier proof (via NullifierVerifier) and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.).
 - **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status), `Attestation` (registry + credentialGroupId + appId + idHash + blindedId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
-- **IVerifier.sol** — Interface for the NullifierVerifier contract: `verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes proof)`.
+- **INullifierVerifier.sol** — Interface for the NullifierVerifier contract: `verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes proof)`.
 - **Events.sol** — Event declarations.
 
 ### Key design decisions
