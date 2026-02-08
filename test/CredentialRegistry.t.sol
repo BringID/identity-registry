@@ -20,8 +20,8 @@ contract CredentialRegistryTest is Test {
     SemaphoreVerifier semaphoreVerifier;
 
     address owner;
-    address tlsnVerifier;
-    uint256 tlsnVerifierPrivateKey;
+    address trustedVerifier;
+    uint256 trustedVerifierPrivateKey;
     address mockNullifierVerifier;
 
     uint256 constant DEFAULT_APP_ID = 1;
@@ -31,19 +31,20 @@ contract CredentialRegistryTest is Test {
     );
     event CredentialAdded(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 indexed commitment);
     event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
-    event TLSNVerifierSet(address indexed verifier);
+    event TrustedVerifierAdded(address indexed verifier);
+    event TrustedVerifierRemoved(address indexed verifier);
     event NullifierVerifierSet(address indexed verifier);
     event AppRegistered(uint256 indexed appId);
     event AppSuspended(uint256 indexed appId);
 
     function setUp() public {
         owner = address(this);
-        (tlsnVerifier, tlsnVerifierPrivateKey) = makeAddrAndKey("tlsn-verifier");
+        (trustedVerifier, trustedVerifierPrivateKey) = makeAddrAndKey("trusted-verifier");
         mockNullifierVerifier = makeAddr("nullifier-verifier");
 
         semaphoreVerifier = new SemaphoreVerifier();
         semaphore = new Semaphore(ISemaphoreVerifier(address(semaphoreVerifier)));
-        registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifier, mockNullifierVerifier);
+        registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, mockNullifierVerifier);
 
         // Register default app
         registry.registerApp(DEFAULT_APP_ID);
@@ -76,7 +77,7 @@ contract CredentialRegistryTest is Test {
         view
         returns (uint8 v, bytes32 r, bytes32 s)
     {
-        return vm.sign(tlsnVerifierPrivateKey, keccak256(abi.encode(att)).toEthSignedMessageHash());
+        return vm.sign(trustedVerifierPrivateKey, keccak256(abi.encode(att)).toEthSignedMessageHash());
     }
 
     function _joinGroup(uint256 credentialGroupId, uint256 appId, bytes32 idHash, bytes32 blindedId, uint256 commitment)
@@ -102,7 +103,7 @@ contract CredentialRegistryTest is Test {
         return ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: appId,
-            bringIdProof: hex"dead",
+            nullifierProof: hex"dead",
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: depth,
                 merkleTreeRoot: root,
@@ -118,14 +119,19 @@ contract CredentialRegistryTest is Test {
 
     function testConstructor() public {
         assertEq(address(registry.SEMAPHORE()), address(semaphore));
-        assertEq(registry.TLSNVerifier(), tlsnVerifier);
+        assertTrue(registry.trustedVerifiers(trustedVerifier));
         assertEq(registry.nullifierVerifier(), mockNullifierVerifier);
         assertEq(registry.owner(), owner);
     }
 
+    function testConstructorRejectsZeroTrustedVerifier() public {
+        vm.expectRevert("Invalid trusted verifier address");
+        new CredentialRegistry(ISemaphore(address(semaphore)), address(0), mockNullifierVerifier);
+    }
+
     function testConstructorRejectsZeroNullifierVerifier() public {
         vm.expectRevert("Invalid nullifier verifier address");
-        new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifier, address(0));
+        new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, address(0));
     }
 
     // --- Credential group tests ---
@@ -202,29 +208,55 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(0, 100);
     }
 
-    // --- Verifier setter tests ---
+    // --- Trusted verifier tests ---
 
-    function testSetVerifierShouldRejectZeroAddress() public {
-        vm.expectRevert();
-        registry.setVerifier(address(0));
-    }
-
-    function testSetVerifier() public {
+    function testAddTrustedVerifier() public {
         address newVerifier = makeAddr("new-verifier");
 
         vm.expectEmit(true, false, false, false);
-        emit TLSNVerifierSet(newVerifier);
+        emit TrustedVerifierAdded(newVerifier);
 
-        registry.setVerifier(newVerifier);
-        assertEq(registry.TLSNVerifier(), newVerifier);
+        registry.addTrustedVerifier(newVerifier);
+        assertTrue(registry.trustedVerifiers(newVerifier));
     }
 
-    function testSetVerifierOnlyOwner() public {
+    function testAddTrustedVerifierRejectsZeroAddress() public {
+        vm.expectRevert("Invalid verifier address");
+        registry.addTrustedVerifier(address(0));
+    }
+
+    function testAddTrustedVerifierOnlyOwner() public {
         address notOwner = makeAddr("not-owner");
 
         vm.prank(notOwner);
         vm.expectRevert("Ownable: caller is not the owner");
-        registry.setVerifier(makeAddr("new-verifier"));
+        registry.addTrustedVerifier(makeAddr("new-verifier"));
+    }
+
+    function testRemoveTrustedVerifier() public {
+        address newVerifier = makeAddr("new-verifier");
+        registry.addTrustedVerifier(newVerifier);
+        assertTrue(registry.trustedVerifiers(newVerifier));
+
+        vm.expectEmit(true, false, false, false);
+        emit TrustedVerifierRemoved(newVerifier);
+
+        registry.removeTrustedVerifier(newVerifier);
+        assertFalse(registry.trustedVerifiers(newVerifier));
+    }
+
+    function testRemoveTrustedVerifierOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.removeTrustedVerifier(trustedVerifier);
+    }
+
+    function testRemoveTrustedVerifierNotTrusted() public {
+        address untrusted = makeAddr("untrusted");
+        vm.expectRevert("Verifier is not trusted");
+        registry.removeTrustedVerifier(untrusted);
     }
 
     function testSetNullifierVerifier() public {
@@ -420,7 +452,7 @@ contract CredentialRegistryTest is Test {
 
         registry.joinGroup(message, v, r, s);
 
-        vm.expectRevert("Nonce is used");
+        vm.expectRevert("Credential already registered");
         registry.joinGroup(message, v, r, s);
     }
 
@@ -444,7 +476,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, DEFAULT_APP_ID, idHash, blindedId, commitment2);
         (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
 
-        vm.expectRevert("Nonce is used");
+        vm.expectRevert("Credential already registered");
         registry.joinGroup(message2, v2, r2, s2);
     }
 
@@ -481,7 +513,7 @@ contract CredentialRegistryTest is Test {
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(123456, keccak256(abi.encode(message)).toEthSignedMessageHash());
 
-        vm.expectRevert("Invalid TLSN Verifier signature");
+        vm.expectRevert("Untrusted verifier");
         registry.joinGroup(message, v, r, s);
     }
 
@@ -514,7 +546,7 @@ contract CredentialRegistryTest is Test {
         ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
-            bringIdProof: hex"dead",
+            nullifierProof: hex"dead",
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
                 merkleTreeRoot: 0,
@@ -538,7 +570,7 @@ contract CredentialRegistryTest is Test {
         ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: inactiveAppId,
-            bringIdProof: hex"dead",
+            nullifierProof: hex"dead",
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
                 merkleTreeRoot: 0,
@@ -572,7 +604,7 @@ contract CredentialRegistryTest is Test {
         registry.validateProof(0, proof);
     }
 
-    function testValidateProofBringIdFails() public {
+    function testValidateProofNullifierProofFails() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -645,7 +677,7 @@ contract CredentialRegistryTest is Test {
         proofs[1] = ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId2,
             appId: DEFAULT_APP_ID,
-            bringIdProof: hex"dead",
+            nullifierProof: hex"dead",
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
                 merkleTreeRoot: 0,

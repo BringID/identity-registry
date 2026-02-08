@@ -11,7 +11,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 /// @title CredentialRegistry
 /// @notice Main contract for the BringID privacy-preserving credential system.
 ///
-/// Users join credential groups via TLSN-verified attestations, then prove membership
+/// Users join credential groups via verifier-signed attestations, then prove membership
 /// using Semaphore zero-knowledge proofs. Each credential group carries a score;
 /// the `score()` function aggregates scores across multiple credential proofs.
 ///
@@ -22,7 +22,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 ///
 /// Two ZK proofs are validated per credential proof:
 ///   1. Semaphore proof — proves group membership without revealing identity
-///   2. BringID proof (via NullifierVerifier) — proves the nullifier is correctly
+///   2. Nullifier proof (via NullifierVerifier) — proves the nullifier is correctly
 ///      bound to the app, and tracks nullifier uniqueness
 contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     using ECDSA for bytes32;
@@ -30,14 +30,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice The Semaphore contract used for group management and ZK proof verification.
     ISemaphore public immutable SEMAPHORE;
 
-    /// @notice Address of the TLSN verifier that signs attestations.
-    /// Attestations are ECDSA-signed messages from the TLSN oracle confirming
-    /// a user's credential (e.g. account ownership) was verified via TLS Notary.
-    address public TLSNVerifier;
+    /// @notice Registry of trusted verifiers that can sign attestations.
+    /// Each verifier is an ECDSA signer whose signatures are accepted for
+    /// credential attestations. Supports multiple verification methods
+    /// (TLSN, OAuth, zkPassport, etc.).
+    mapping(address => bool) public trustedVerifiers;
 
     /// @notice Address of the NullifierVerifier contract (Noir HonkVerifier wrapper).
-    /// Verifies the BringID proof that binds a Semaphore nullifier to an app ID,
-    /// and tracks used nullifiers to prevent double-spending.
+    /// Verifies the nullifier proof that the Semaphore nullifier was correctly derived
+    /// for the app, and tracks used nullifiers to prevent double-spending.
     address public nullifierVerifier;
 
     /// @notice Registry of credential groups. Each group has a score, a backing
@@ -48,20 +49,20 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// Apps must be registered before users can join groups or submit proofs for them.
     mapping(uint256 appId => App) public apps;
 
-    /// @notice Tracks consumed nonces to prevent duplicate group joins.
-    /// Nonce = keccak256(registry, credentialGroupId, blindedId), which ensures
-    /// one membership per (credential group, app-specific blinded identity) pair
+    /// @notice Tracks registered credentials to prevent duplicate group joins.
+    /// Key = keccak256(registry, credentialGroupId, blindedId), which ensures
+    /// one credential per (credential group, app-specific blinded identity) pair
     /// while allowing different Semaphore commitments across groups.
-    mapping(bytes32 nonce => bool isConsumed) public nonceUsed;
+    mapping(bytes32 => bool) public credentialRegistered;
 
     /// @param semaphore_ Address of the deployed Semaphore contract.
-    /// @param TLSNVerifier_ Address of the TLSN oracle signer.
+    /// @param trustedVerifier_ Address of the initial trusted verifier to add.
     /// @param nullifierVerifier_ Address of the NullifierVerifier contract.
-    constructor(ISemaphore semaphore_, address TLSNVerifier_, address nullifierVerifier_) {
-        require(TLSNVerifier_ != address(0), "Invalid TLSN Verifier address");
+    constructor(ISemaphore semaphore_, address trustedVerifier_, address nullifierVerifier_) {
+        require(trustedVerifier_ != address(0), "Invalid trusted verifier address");
         require(nullifierVerifier_ != address(0), "Invalid nullifier verifier address");
         SEMAPHORE = semaphore_;
-        TLSNVerifier = TLSNVerifier_;
+        trustedVerifiers[trustedVerifier_] = true;
         nullifierVerifier = nullifierVerifier_;
     }
 
@@ -91,7 +92,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     //  Group membership
     // ──────────────────────────────────────────────
 
-    /// @notice Join a credential group using a TLSN-signed attestation (bytes signature variant).
+    /// @notice Join a credential group using a verifier-signed attestation (bytes signature variant).
     /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
     ///      and delegates to the main joinGroup implementation.
     ///      The signature can be reused across all networks since it signs the attestation
@@ -111,40 +112,40 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         joinGroup(attestation_, v, r, s);
     }
 
-    /// @notice Join a credential group using a TLSN-signed attestation.
+    /// @notice Join a credential group using a verifier-signed attestation.
     /// @dev Validates the attestation and adds the user's Semaphore commitment to the
     ///      backing Semaphore group. The flow:
-    ///      1. Compute nonce from (registry, credentialGroupId, blindedId) — excludes the
-    ///         Semaphore commitment so the same user (blindedId) cannot join the same group
-    ///         twice, even with different commitments.
+    ///      1. Compute credential ID from (registry, credentialGroupId, blindedId) — excludes
+    ///         the Semaphore commitment so the same user (blindedId) cannot join the same
+    ///         group twice, even with different commitments.
     ///      2. Verify the credential group and app are active.
-    ///      3. Verify the attestation was signed by the trusted TLSN verifier.
-    ///      4. Mark the nonce as consumed and add the commitment to the Semaphore group.
+    ///      3. Verify the attestation was signed by a trusted verifier.
+    ///      4. Mark the credential as registered and add the commitment to the Semaphore group.
     /// @param attestation_ The attestation struct containing:
     ///        - registry: must match this contract's address
     ///        - credentialGroupId: the group to join
     ///        - appId: the app this identity belongs to (must be active)
     ///        - idHash: hash of the user's external account ID
-    ///        - blindedId: app-specific blinded identity (used for nonce dedup)
+    ///        - blindedId: app-specific blinded identity (used for dedup)
     ///        - semaphoreIdentityCommitment: the Semaphore identity commitment to register
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function joinGroup(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
-        bytes32 nonce =
+        bytes32 credentialId =
             keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.blindedId));
 
         require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
-        require(!nonceUsed[nonce], "Nonce is used");
+        require(!credentialRegistered[credentialId], "Credential already registered");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
 
-        require(signer == TLSNVerifier, "Invalid TLSN Verifier signature");
+        require(trustedVerifiers[signer], "Untrusted verifier");
 
-        nonceUsed[nonce] = true;
+        credentialRegistered[credentialId] = true;
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialAdded(
             attestation_.credentialGroupId, attestation_.appId, attestation_.semaphoreIdentityCommitment
@@ -156,7 +157,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     // ──────────────────────────────────────────────
 
     /// @notice Validates a credential group proof consisting of a Semaphore ZK proof
-    ///         and a BringID nullifier proof.
+    ///         and a nullifier proof.
     /// @dev The validation flow:
     ///      1. Check the credential group and app are active.
     ///      2. Verify scope binding: scope must equal keccak256(msg.sender, context_),
@@ -174,7 +175,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param proof_ The credential group proof containing:
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
-    ///        - bringIdProof: serialized Noir/UltraHonk proof for nullifier binding
+    ///        - nullifierProof: serialized Noir/UltraHonk proof for nullifier correctness
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
     function validateProof(uint256 context_, CredentialGroupProof memory proof_) public {
         CredentialGroup memory _credentialGroup = credentialGroups[proof_.credentialGroupId];
@@ -186,14 +187,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
         IVerifier(nullifierVerifier)
-            .verifyProof(bytes32(semaphoreNullifier), proof_.appId, proof_.semaphoreProof.scope, proof_.bringIdProof);
+            .verifyProof(bytes32(semaphoreNullifier), proof_.appId, proof_.semaphoreProof.scope, proof_.nullifierProof);
 
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, semaphoreNullifier);
     }
 
     /// @notice Validates multiple credential group proofs and returns the sum of their scores.
     /// @dev Iterates over each proof, accumulates the group's score, and calls validateProof()
-    ///      which performs full Semaphore + BringID verification. If any proof is invalid,
+    ///      which performs full Semaphore + nullifier verification. If any proof is invalid,
     ///      the entire transaction reverts.
     /// @param context_ Application-defined context value (see validateProof).
     /// @param proofs_ Array of credential group proofs to validate.
@@ -259,15 +260,23 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit AppSuspended(appId_);
     }
 
-    /// @notice Updates the TLSN verifier address used to validate attestation signatures.
-    /// @param TLSNVerifier_ The new TLSN verifier address (must not be zero).
-    function setVerifier(address TLSNVerifier_) public onlyOwner {
-        require(TLSNVerifier_ != address(0), "Invalid TLSN Verifier address");
-        TLSNVerifier = TLSNVerifier_;
-        emit TLSNVerifierSet(TLSNVerifier_);
+    /// @notice Adds a trusted verifier that can sign attestations.
+    /// @param verifier_ The verifier address to trust (must not be zero).
+    function addTrustedVerifier(address verifier_) public onlyOwner {
+        require(verifier_ != address(0), "Invalid verifier address");
+        trustedVerifiers[verifier_] = true;
+        emit TrustedVerifierAdded(verifier_);
     }
 
-    /// @notice Updates the NullifierVerifier contract address used for BringID proof verification.
+    /// @notice Removes a trusted verifier, revoking its ability to sign attestations.
+    /// @param verifier_ The verifier address to remove (must be currently trusted).
+    function removeTrustedVerifier(address verifier_) public onlyOwner {
+        require(trustedVerifiers[verifier_], "Verifier is not trusted");
+        trustedVerifiers[verifier_] = false;
+        emit TrustedVerifierRemoved(verifier_);
+    }
+
+    /// @notice Updates the NullifierVerifier contract address used for nullifier proof verification.
     /// @param nullifierVerifier_ The new NullifierVerifier address (must not be zero).
     function setNullifierVerifier(address nullifierVerifier_) public onlyOwner {
         require(nullifierVerifier_ != address(0), "Invalid nullifier verifier address");

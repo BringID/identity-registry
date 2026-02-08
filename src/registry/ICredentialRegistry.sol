@@ -29,7 +29,7 @@ interface ICredentialRegistry {
     struct CredentialGroupProof {
         uint256 credentialGroupId;
         uint256 appId;
-        bytes bringIdProof;
+        bytes nullifierProof;
         ISemaphore.SemaphoreProof semaphoreProof;
     }
 

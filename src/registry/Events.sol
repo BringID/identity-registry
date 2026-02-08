@@ -7,7 +7,8 @@ event CredentialGroupCreated(uint256 indexed credentialGroupId, ICredentialRegis
 event CredentialAdded(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 indexed commitment);
 event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
 
-event TLSNVerifierSet(address indexed verifier);
+event TrustedVerifierAdded(address indexed verifier);
+event TrustedVerifierRemoved(address indexed verifier);
 event NullifierVerifierSet(address indexed verifier);
 
 event AppRegistered(uint256 indexed appId);
