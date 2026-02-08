@@ -48,14 +48,14 @@ make deploy-idcard        # IdCard contract to Base
 ### Core contracts (`src/registry/`)
 
 - **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `joinGroup()` with a verifier-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof + nullifier proof (via NullifierVerifier) and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.).
-- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status), `Attestation` (registry + credentialGroupId + appId + blindedId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
+- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status), `Attestation` (registry + credentialGroupId + appId + credentialId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
 - **INullifierVerifier.sol** — Interface for the NullifierVerifier contract: `verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes proof)`.
 - **Events.sol** — Event declarations.
 
 ### Key design decisions
 
 - **Ownable2Step** (OpenZeppelin) for admin operations — two-step ownership transfer.
-- **Credential deduplication**: `credentialRegistered[keccak256(registry, credentialGroupId, blindedId)]` prevents the same user from joining a group twice, but allows different Semaphore commitments across groups.
+- **Credential deduplication**: `credentialRegistered[keccak256(registry, credentialGroupId, credentialId)]` prevents the same user from joining a group twice, but allows different Semaphore commitments across groups.
 - **Scope binding**: `validateProof` ties proofs to `msg.sender` + a context value, preventing proof replay across callers.
 - **App-specific identities**: each app derives a unique Semaphore commitment from the user's `secret_base + app_id`. The NullifierVerifier (Noir circuit) proves the nullifier was correctly derived for that app, preventing cross-app proof replay.
 - **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.

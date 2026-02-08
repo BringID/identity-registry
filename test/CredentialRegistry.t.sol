@@ -58,14 +58,14 @@ contract CredentialRegistryTest is Test {
     function _createAttestation(
         uint256 credentialGroupId,
         uint256 appId,
-        bytes32 blindedId,
+        bytes32 credentialId,
         uint256 commitment
     ) internal view returns (ICredentialRegistry.Attestation memory) {
         return ICredentialRegistry.Attestation({
             registry: address(registry),
             credentialGroupId: credentialGroupId,
             appId: appId,
-            blindedId: blindedId,
+            credentialId: credentialId,
             semaphoreIdentityCommitment: commitment
         });
     }
@@ -78,11 +78,11 @@ contract CredentialRegistryTest is Test {
         return vm.sign(trustedVerifierPrivateKey, keccak256(abi.encode(att)).toEthSignedMessageHash());
     }
 
-    function _joinGroup(uint256 credentialGroupId, uint256 appId, bytes32 blindedId, uint256 commitment)
+    function _joinGroup(uint256 credentialGroupId, uint256 appId, bytes32 credentialId, uint256 commitment)
         internal
     {
         ICredentialRegistry.Attestation memory att =
-            _createAttestation(credentialGroupId, appId, blindedId, commitment);
+            _createAttestation(credentialGroupId, appId, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
         registry.joinGroup(att, v, r, s);
     }
@@ -347,11 +347,11 @@ contract CredentialRegistryTest is Test {
         uint256 score = 100;
         registry.createCredentialGroup(credentialGroupId, score);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectEmit(true, true, true, false);
@@ -365,11 +365,11 @@ contract CredentialRegistryTest is Test {
         uint256 score = 100;
         registry.createCredentialGroup(credentialGroupId, score);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -382,11 +382,11 @@ contract CredentialRegistryTest is Test {
 
     function testJoinGroupInactiveVerification() public {
         uint256 credentialGroupId = 1;
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectRevert("Credential group is inactive");
@@ -398,11 +398,11 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 100);
 
         uint256 inactiveAppId = 999;
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, inactiveAppId, blindedId, commitment);
+            _createAttestation(credentialGroupId, inactiveAppId, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectRevert("App is not active");
@@ -413,14 +413,14 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
             registry: address(0x123),
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
-            blindedId: blindedId,
+            credentialId: credentialId,
             semaphoreIdentityCommitment: commitment
         });
 
@@ -434,11 +434,11 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         registry.joinGroup(message, v, r, s);
@@ -451,19 +451,19 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
         uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
 
         // First join succeeds
         ICredentialRegistry.Attestation memory message1 =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment1);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment1);
         (uint8 v1, bytes32 r1, bytes32 s1) = _signAttestation(message1);
         registry.joinGroup(message1, v1, r1, s1);
 
-        // Second join with same blindedId but different commitment should fail
+        // Second join with same credentialId but different commitment should fail
         ICredentialRegistry.Attestation memory message2 =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment2);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2);
         (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
 
         vm.expectRevert("Credential already registered");
@@ -477,27 +477,27 @@ contract CredentialRegistryTest is Test {
         uint256 appId2 = 2;
         registry.registerApp(appId2);
 
-        bytes32 blindedId1 = keccak256("blinded-id-app1");
-        bytes32 blindedId2 = keccak256("blinded-id-app2");
+        bytes32 credentialId1 = keccak256("blinded-id-app1");
+        bytes32 credentialId2 = keccak256("blinded-id-app2");
         uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
         uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
 
         // Join with app 1
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, blindedId1, commitment1);
+        _joinGroup(credentialGroupId, DEFAULT_APP_ID, credentialId1, commitment1);
 
-        // Join with app 2 — different blindedId so different nonce, should succeed
-        _joinGroup(credentialGroupId, appId2, blindedId2, commitment2);
+        // Join with app 2 — different credentialId so different nonce, should succeed
+        _joinGroup(credentialGroupId, appId2, credentialId2, commitment2);
     }
 
     function testJoinGroupInvalidSignature() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
-        bytes32 blindedId = keccak256("blinded-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
         ICredentialRegistry.Attestation memory message =
-            _createAttestation(credentialGroupId, DEFAULT_APP_ID, blindedId, commitment);
+            _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(123456, keccak256(abi.encode(message)).toEthSignedMessageHash());
 

@@ -50,8 +50,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     mapping(uint256 appId => App) public apps;
 
     /// @notice Tracks registered credentials to prevent duplicate group joins.
-    /// Key = keccak256(registry, credentialGroupId, blindedId), which ensures
-    /// one credential per (credential group, app-specific blinded identity) pair
+    /// Key = keccak256(registry, credentialGroupId, credentialId), which ensures
+    /// one credential per (credential group, app-specific credential identity) pair
     /// while allowing different Semaphore commitments across groups.
     mapping(bytes32 => bool) public credentialRegistered;
 
@@ -115,8 +115,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Join a credential group using a verifier-signed attestation.
     /// @dev Validates the attestation and adds the user's Semaphore commitment to the
     ///      backing Semaphore group. The flow:
-    ///      1. Compute credential ID from (registry, credentialGroupId, blindedId) — excludes
-    ///         the Semaphore commitment so the same user (blindedId) cannot join the same
+    ///      1. Compute registration hash from (registry, credentialGroupId, credentialId) — excludes
+    ///         the Semaphore commitment so the same user (credentialId) cannot join the same
     ///         group twice, even with different commitments.
     ///      2. Verify the credential group and app are active.
     ///      3. Verify the attestation was signed by a trusted verifier.
@@ -125,26 +125,26 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - registry: must match this contract's address
     ///        - credentialGroupId: the group to join
     ///        - appId: the app this identity belongs to (must be active)
-    ///        - blindedId: app-specific blinded identity (used for dedup)
+    ///        - credentialId: app-specific credential identity (used for dedup)
     ///        - semaphoreIdentityCommitment: the Semaphore identity commitment to register
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function joinGroup(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
-        bytes32 credentialHash =
-            keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.blindedId));
+        bytes32 registrationHash =
+            keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
 
         require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
-        require(!credentialRegistered[credentialHash], "Credential already registered");
+        require(!credentialRegistered[registrationHash], "Credential already registered");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
 
         require(trustedVerifiers[signer], "Untrusted verifier");
 
-        credentialRegistered[credentialHash] = true;
+        credentialRegistered[registrationHash] = true;
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialAdded(
             attestation_.credentialGroupId, attestation_.appId, attestation_.semaphoreIdentityCommitment
