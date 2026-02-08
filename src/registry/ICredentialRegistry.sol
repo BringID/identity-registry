@@ -37,7 +37,6 @@ interface ICredentialRegistry {
         address registry;
         uint256 credentialGroupId;
         uint256 appId;
-        bytes32 idHash;
         bytes32 blindedId;
         uint256 semaphoreIdentityCommitment;
     }

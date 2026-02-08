@@ -125,7 +125,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - registry: must match this contract's address
     ///        - credentialGroupId: the group to join
     ///        - appId: the app this identity belongs to (must be active)
-    ///        - idHash: hash of the user's external account ID
     ///        - blindedId: app-specific blinded identity (used for dedup)
     ///        - semaphoreIdentityCommitment: the Semaphore identity commitment to register
     /// @param v ECDSA recovery parameter.
@@ -133,19 +132,19 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param s ECDSA signature component.
     function joinGroup(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
-        bytes32 credentialId =
+        bytes32 credentialHash =
             keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.blindedId));
 
         require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
-        require(!credentialRegistered[credentialId], "Credential already registered");
+        require(!credentialRegistered[credentialHash], "Credential already registered");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
 
         require(trustedVerifiers[signer], "Untrusted verifier");
 
-        credentialRegistered[credentialId] = true;
+        credentialRegistered[credentialHash] = true;
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialAdded(
             attestation_.credentialGroupId, attestation_.appId, attestation_.semaphoreIdentityCommitment
