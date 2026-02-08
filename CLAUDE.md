@@ -47,8 +47,8 @@ make deploy-idcard        # IdCard contract to Base
 
 ### Core contracts (`src/registry/`)
 
-- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `registerCredential()` with a verifier-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof + nullifier proof (via NullifierVerifier) and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.).
-- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status), `Attestation` (registry + credentialGroupId + appId + credentialId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
+- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (each with a score and backing Semaphore group). Users `registerCredential()` with a verifier-signed attestation. Proof validation via `validateProof()` checks the Semaphore ZK proof + nullifier proof (via NullifierVerifier) and enforces that `scope == keccak256(abi.encode(msg.sender, context))`, binding proofs to the caller. `score()` validates multiple proofs and sums their group scores. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Per-app timelocked key recovery via `initiateRecovery()` / `executeRecovery()` — see Key Recovery section below.
+- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (score + semaphoreGroupId + status), `App` (status + recoveryTimelock), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `Attestation` (registry + credentialGroupId + credentialId + commitment), `CredentialGroupProof` (credentialGroupId + appId + nullifierProof + semaphoreProof).
 - **INullifierVerifier.sol** — Interface for the NullifierVerifier contract: `verifyProof(bytes32 nullifier, uint256 appId, uint256 scope, bytes proof)`.
 - **Events.sol** — Event declarations.
 
@@ -60,6 +60,7 @@ make deploy-idcard        # IdCard contract to Base
 - **App-specific identities**: each app derives a unique Semaphore commitment from the user's `secret_base + app_id`. The NullifierVerifier (Noir circuit) proves the nullifier was correctly derived for that app, preventing cross-app proof replay.
 - **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.
 - Semaphore groups are created on-chain via the Semaphore contract; the registry maps its own credential group IDs to Semaphore group IDs.
+- **Key recovery**: per-app timelocked commitment replacement. When a user loses their wallet, they re-authenticate via OAuth; the verifier re-derives the same `credentialId` and signs an attestation with a new commitment. `initiateRecovery()` removes the old commitment from the Semaphore group immediately and queues the new one behind the app's `recoveryTimelock`. `executeRecovery()` adds the new commitment after the timelock expires. Recovery is disabled by default (`recoveryTimelock = 0`); the owner enables it per-app via `setAppRecoveryTimelock()`. The `Attestation` struct does not include `appId` — the app context is already encoded in `credentialId` (derived off-chain as `hash(oauth_id, app_id, verifier_private_key)`). `initiateRecovery` takes `appId` as a separate parameter for timelock lookup. `registeredCommitments` mapping tracks the current commitment per registration hash; `pendingRecoveries` mapping tracks in-flight recovery requests.
 
 ### Scripts (`script/`)
 
@@ -88,6 +89,6 @@ GitHub Actions (`.github/workflows/test.yml`): format check → build with sizes
 
 ### Foundry config (`foundry.toml`)
 
-- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.** Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests).
+- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.** Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests, `_executeInitiateRecovery` in CredentialRegistry).
 - Optimizer with 200 runs
 - Fuzz: 10 runs, 100 max rejections
