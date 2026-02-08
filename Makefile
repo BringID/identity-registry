@@ -66,3 +66,16 @@ deploy-idcard-full:
 	script/DeployIdCard.s.sol:DeployIdCardWithRegistry \
 	--rpc-url $$BASE_RPC_URL \
 	--broadcast --verify -vvvv
+
+# Register apps commands
+deploy-register-apps-local:
+	forge script \
+	script/RegisterApps.s.sol:RegisterApps \
+	--rpc-url http://127.0.0.1:8545 --broadcast -vvvv
+
+deploy-register-apps:
+	forge script \
+	--chain 84532 \
+	script/RegisterApps.s.sol:RegisterApps \
+	--rpc-url $$BASE_RPC_URL \
+	--broadcast --verify -vvvv
