@@ -17,7 +17,6 @@ interface ICredentialRegistry {
     }
 
     struct CredentialGroup {
-        uint256 score;
         uint256 semaphoreGroupId;
         CredentialGroupStatus status;
     }
@@ -25,6 +24,8 @@ interface ICredentialRegistry {
     struct App {
         AppStatus status;
         uint256 recoveryTimelock;
+        address admin;
+        address scorer;
     }
 
     struct RecoveryRequest {
@@ -51,6 +52,5 @@ interface ICredentialRegistry {
     function score(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
     function validateProof(uint256 context, CredentialGroupProof calldata proof) external;
     function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
-    function credentialGroupScore(uint256 credentialGroupId_) external view returns (uint256);
     function appIsActive(uint256 appId_) external view returns (bool);
 }

@@ -3,6 +3,8 @@ pragma solidity ^0.8.23;
 
 import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
+import {IScorer} from "./IScorer.sol";
+import {DefaultScorer} from "./DefaultScorer.sol";
 import {INullifierVerifier} from "./INullifierVerifier.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
@@ -41,8 +43,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// for the app, and tracks used nullifiers to prevent double-spending.
     address public nullifierVerifier;
 
-    /// @notice Registry of credential groups. Each group has a score, a backing
-    /// Semaphore group ID, and a status (UNDEFINED / ACTIVE / SUSPENDED).
+    /// @notice Registry of credential groups. Each group has a backing
+    /// Semaphore group ID and a status (UNDEFINED / ACTIVE / SUSPENDED).
     mapping(uint256 credentialGroupId => CredentialGroup) public credentialGroups;
 
     /// @notice Registry of apps. Each app has a status (UNDEFINED / ACTIVE / SUSPENDED).
@@ -63,6 +65,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// A non-zero executeAfter indicates an active pending recovery.
     mapping(bytes32 registrationHash => RecoveryRequest) public pendingRecoveries;
 
+    /// @notice Auto-incrementing app ID counter. Next app will get this ID.
+    uint256 public nextAppId = 1;
+
+    /// @notice Address of the DefaultScorer contract deployed by the constructor.
+    address public defaultScorer;
+
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
     /// @param nullifierVerifier_ Address of the NullifierVerifier contract.
@@ -72,6 +80,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
         nullifierVerifier = nullifierVerifier_;
+
+        DefaultScorer _scorer = new DefaultScorer();
+        _scorer.transferOwnership(msg.sender);
+        defaultScorer = address(_scorer);
     }
 
     // ──────────────────────────────────────────────
@@ -82,12 +94,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param credentialGroupId_ The credential group ID to check.
     function credentialGroupIsActive(uint256 credentialGroupId_) public view returns (bool) {
         return credentialGroups[credentialGroupId_].status == CredentialGroupStatus.ACTIVE;
-    }
-
-    /// @notice Returns the score assigned to a credential group.
-    /// @param credentialGroupId_ The credential group ID to query.
-    function credentialGroupScore(uint256 credentialGroupId_) public view returns (uint256) {
-        return credentialGroups[credentialGroupId_].score;
     }
 
     /// @notice Returns true if the app is currently active.
@@ -214,7 +220,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
-            _score += credentialGroups[_proof.credentialGroupId].score;
+            _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
             validateProof(context_, _proof);
         }
     }
@@ -223,19 +229,18 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     //  Owner-only administration
     // ──────────────────────────────────────────────
 
-    /// @notice Creates a new credential group with the given ID and score.
+    /// @notice Creates a new credential group with the given ID.
     /// @dev Also creates a corresponding Semaphore group on-chain.
     ///      The credential group ID is user-defined (not auto-incremented) and must be > 0.
-    ///      Once created, a group starts as ACTIVE and can later be suspended.
+    ///      Scores are managed separately by Scorer contracts, not by the registry.
     /// @param credentialGroupId_ The unique identifier for this credential group (must be > 0).
-    /// @param score_ The score value assigned to this group (0 is allowed).
-    function createCredentialGroup(uint256 credentialGroupId_, uint256 score_) public onlyOwner {
+    function createCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
         require(credentialGroupId_ > 0, "Credential group ID cannot equal zero");
         require(
             credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED, "Credential group exists"
         );
         CredentialGroup memory _credentialGroup =
-            CredentialGroup(score_, SEMAPHORE.createGroup(), ICredentialRegistry.CredentialGroupStatus.ACTIVE);
+            CredentialGroup(SEMAPHORE.createGroup(), ICredentialRegistry.CredentialGroupStatus.ACTIVE);
         credentialGroups[credentialGroupId_] = _credentialGroup;
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
     }
@@ -250,16 +255,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         credentialGroups[credentialGroupId_].status = CredentialGroupStatus.SUSPENDED;
     }
 
-    /// @notice Registers a new app, enabling users to register credentials and submit proofs for it.
-    /// @dev App IDs are user-defined (not auto-incremented) and must be > 0.
-    ///      Each app represents a consuming application that derives unique Semaphore
-    ///      identities from users' secret bases.
-    /// @param appId_ The unique identifier for this app (must be > 0).
-    function registerApp(uint256 appId_) public onlyOwner {
-        require(appId_ > 0, "App ID cannot equal zero");
-        require(apps[appId_].status == AppStatus.UNDEFINED, "App already exists");
-        apps[appId_] = App(AppStatus.ACTIVE, 0);
-        emit AppRegistered(appId_);
+    /// @notice Registers a new app. Caller becomes the app admin.
+    /// @dev App IDs are auto-incremented. The app uses the defaultScorer by default.
+    /// @param recoveryTimelock_ The recovery timelock duration in seconds (0 to disable).
+    /// @return appId_ The newly assigned app ID.
+    function registerApp(uint256 recoveryTimelock_) public returns (uint256 appId_) {
+        appId_ = nextAppId++;
+        apps[appId_] = App(AppStatus.ACTIVE, recoveryTimelock_, msg.sender, defaultScorer);
+        emit AppRegistered(appId_, msg.sender, recoveryTimelock_);
     }
 
     /// @notice Suspends an active app, preventing new registrations and proof validations for it.
@@ -295,15 +298,34 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     /// @notice Sets the recovery timelock duration for an app.
-    /// @dev Recovery is disabled by default (timelock = 0). The owner must explicitly
-    ///      enable it by setting a positive timelock.
+    /// @dev Only callable by the app admin. Recovery timelock must be > 0.
     /// @param appId_ The app ID to configure.
     /// @param recoveryTimelock_ The timelock duration in seconds (must be > 0).
-    function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public onlyOwner {
+    function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public {
+        require(apps[appId_].admin == msg.sender, "Not app admin");
         require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
         require(recoveryTimelock_ > 0, "Recovery timelock must be positive");
         apps[appId_].recoveryTimelock = recoveryTimelock_;
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
+    }
+
+    /// @notice Transfers app admin to a new address.
+    /// @param appId_ The app ID.
+    /// @param newAdmin_ The new admin address.
+    function setAppAdmin(uint256 appId_, address newAdmin_) public {
+        require(apps[appId_].admin == msg.sender, "Not app admin");
+        address oldAdmin = apps[appId_].admin;
+        apps[appId_].admin = newAdmin_;
+        emit AppAdminTransferred(appId_, oldAdmin, newAdmin_);
+    }
+
+    /// @notice Sets a custom scorer contract for an app.
+    /// @param appId_ The app ID.
+    /// @param scorer_ The scorer contract address.
+    function setAppScorer(uint256 appId_, address scorer_) public {
+        require(apps[appId_].admin == msg.sender, "Not app admin");
+        apps[appId_].scorer = scorer_;
+        emit AppScorerSet(appId_, scorer_);
     }
 
     // ──────────────────────────────────────────────
