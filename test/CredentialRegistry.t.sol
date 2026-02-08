@@ -349,7 +349,7 @@ contract CredentialRegistryTest is Test {
 
     // --- JoinGroup tests ---
 
-    function testJoinGroup() public {
+    function testRegisterCredential() public {
         uint256 credentialGroupId = 1;
         uint256 score = 100;
         registry.createCredentialGroup(credentialGroupId, score);
@@ -367,7 +367,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupWithBytes() public {
+    function testRegisterCredentialWithBytes() public {
         uint256 credentialGroupId = 1;
         uint256 score = 100;
         registry.createCredentialGroup(credentialGroupId, score);
@@ -387,7 +387,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, signature);
     }
 
-    function testJoinGroupInactiveVerification() public {
+    function testRegisterCredentialInactiveVerification() public {
         uint256 credentialGroupId = 1;
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -400,7 +400,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupAppNotActive() public {
+    function testRegisterCredentialAppNotActive() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -416,7 +416,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupWrongRegistry() public {
+    function testRegisterCredentialWrongRegistry() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -437,7 +437,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupUsedNonce() public {
+    function testRegisterCredentialUsedNonce() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -454,7 +454,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupUsedNonceWithDifferentCommitment() public {
+    function testRegisterCredentialUsedNonceWithDifferentCommitment() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -477,7 +477,7 @@ contract CredentialRegistryTest is Test {
         registry.registerCredential(message2, v2, r2, s2);
     }
 
-    function testJoinGroupSameUserDifferentApps() public {
+    function testRegisterCredentialSameUserDifferentApps() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
@@ -496,7 +496,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId, appId2, credentialId2, commitment2);
     }
 
-    function testJoinGroupInvalidSignature() public {
+    function testRegisterCredentialInvalidSignature() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 100);
 
