@@ -94,12 +94,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
     /// @notice Join a credential group using a verifier-signed attestation (bytes signature variant).
     /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
-    ///      and delegates to the main joinGroup implementation.
+    ///      and delegates to the main registerCredential implementation.
     ///      The signature can be reused across all networks since it signs the attestation
     ///      struct which includes the registry address.
     /// @param attestation_ The attestation containing credential details and Semaphore commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
-    function joinGroup(Attestation memory attestation_, bytes memory signature_) public {
+    function registerCredential(Attestation memory attestation_, bytes memory signature_) public {
         require(signature_.length == 65, "Bad signature length");
         bytes32 r;
         bytes32 s;
@@ -109,7 +109,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             s := mload(add(signature_, 0x40))
             v := byte(0, mload(add(signature_, 0x60)))
         }
-        joinGroup(attestation_, v, r, s);
+        registerCredential(attestation_, v, r, s);
     }
 
     /// @notice Join a credential group using a verifier-signed attestation.
@@ -130,7 +130,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    function joinGroup(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+    function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
         bytes32 registrationHash =
             keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
@@ -146,8 +146,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         credentialRegistered[registrationHash] = true;
         SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
-        emit CredentialAdded(
-            attestation_.credentialGroupId, attestation_.appId, attestation_.semaphoreIdentityCommitment
+        emit CredentialRegistered(
+            attestation_.credentialGroupId,
+            attestation_.appId,
+            attestation_.semaphoreIdentityCommitment,
+            attestation_.credentialId,
+            registrationHash,
+            signer
         );
     }
 

@@ -29,7 +29,14 @@ contract CredentialRegistryTest is Test {
     event CredentialGroupCreated(
         uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroup credentialGroup
     );
-    event CredentialAdded(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 indexed commitment);
+    event CredentialRegistered(
+        uint256 indexed credentialGroupId,
+        uint256 indexed appId,
+        uint256 indexed commitment,
+        bytes32 credentialId,
+        bytes32 registrationHash,
+        address verifier
+    );
     event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
     event TrustedVerifierAdded(address indexed verifier);
     event TrustedVerifierRemoved(address indexed verifier);
@@ -78,13 +85,13 @@ contract CredentialRegistryTest is Test {
         return vm.sign(trustedVerifierPrivateKey, keccak256(abi.encode(att)).toEthSignedMessageHash());
     }
 
-    function _joinGroup(uint256 credentialGroupId, uint256 appId, bytes32 credentialId, uint256 commitment)
+    function _registerCredential(uint256 credentialGroupId, uint256 appId, bytes32 credentialId, uint256 commitment)
         internal
     {
         ICredentialRegistry.Attestation memory att =
             _createAttestation(credentialGroupId, appId, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
-        registry.joinGroup(att, v, r, s);
+        registry.registerCredential(att, v, r, s);
     }
 
     function _makeProof(
@@ -355,9 +362,9 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectEmit(true, true, true, false);
-        emit CredentialAdded(credentialGroupId, DEFAULT_APP_ID, commitment);
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0));
 
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     function testJoinGroupWithBytes() public {
@@ -375,9 +382,9 @@ contract CredentialRegistryTest is Test {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.expectEmit(true, true, true, false);
-        emit CredentialAdded(credentialGroupId, DEFAULT_APP_ID, commitment);
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0));
 
-        registry.joinGroup(message, signature);
+        registry.registerCredential(message, signature);
     }
 
     function testJoinGroupInactiveVerification() public {
@@ -390,7 +397,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectRevert("Credential group is inactive");
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     function testJoinGroupAppNotActive() public {
@@ -406,7 +413,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectRevert("App is not active");
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     function testJoinGroupWrongRegistry() public {
@@ -427,7 +434,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectRevert("Wrong attestation message");
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     function testJoinGroupUsedNonce() public {
@@ -441,10 +448,10 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
 
         vm.expectRevert("Credential already registered");
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     function testJoinGroupUsedNonceWithDifferentCommitment() public {
@@ -459,7 +466,7 @@ contract CredentialRegistryTest is Test {
         ICredentialRegistry.Attestation memory message1 =
             _createAttestation(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment1);
         (uint8 v1, bytes32 r1, bytes32 s1) = _signAttestation(message1);
-        registry.joinGroup(message1, v1, r1, s1);
+        registry.registerCredential(message1, v1, r1, s1);
 
         // Second join with same credentialId but different commitment should fail
         ICredentialRegistry.Attestation memory message2 =
@@ -467,7 +474,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
 
         vm.expectRevert("Credential already registered");
-        registry.joinGroup(message2, v2, r2, s2);
+        registry.registerCredential(message2, v2, r2, s2);
     }
 
     function testJoinGroupSameUserDifferentApps() public {
@@ -483,10 +490,10 @@ contract CredentialRegistryTest is Test {
         uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
 
         // Join with app 1
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, credentialId1, commitment1);
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, credentialId1, commitment1);
 
         // Join with app 2 — different credentialId so different nonce, should succeed
-        _joinGroup(credentialGroupId, appId2, credentialId2, commitment2);
+        _registerCredential(credentialGroupId, appId2, credentialId2, commitment2);
     }
 
     function testJoinGroupInvalidSignature() public {
@@ -502,7 +509,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(123456, keccak256(abi.encode(message)).toEthSignedMessageHash());
 
         vm.expectRevert("Untrusted verifier");
-        registry.joinGroup(message, v, r, s);
+        registry.registerCredential(message, v, r, s);
     }
 
     // --- ValidateProof tests ---
@@ -513,7 +520,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
 
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
@@ -579,7 +586,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
 
         address prover = makeAddr("prover");
         uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
@@ -598,7 +605,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        _joinGroup(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
+        _registerCredential(credentialGroupId, DEFAULT_APP_ID, keccak256("blinded-id"), commitment);
 
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
@@ -634,8 +641,8 @@ contract CredentialRegistryTest is Test {
         uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
         uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
 
-        _joinGroup(credentialGroupId1, DEFAULT_APP_ID, keccak256("blinded-id-1"), commitment1);
-        _joinGroup(credentialGroupId2, DEFAULT_APP_ID, keccak256("blinded-id-2"), commitment2);
+        _registerCredential(credentialGroupId1, DEFAULT_APP_ID, keccak256("blinded-id-1"), commitment1);
+        _registerCredential(credentialGroupId2, DEFAULT_APP_ID, keccak256("blinded-id-2"), commitment2);
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
 
@@ -656,7 +663,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        _joinGroup(credentialGroupId1, DEFAULT_APP_ID, keccak256("blinded-id-1"), commitment1);
+        _registerCredential(credentialGroupId1, DEFAULT_APP_ID, keccak256("blinded-id-1"), commitment1);
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
 
