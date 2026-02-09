@@ -13,6 +13,7 @@ contract Generate is Script {
             registry: vm.envAddress("REGISTRY"),
             credentialGroupId: vm.envUint("CREDENTIAL_GROUP_ID"),
             credentialId: vm.envBytes32("CREDENTIAL_ID"),
+            appId: vm.envUint("APP_ID"),
             semaphoreIdentityCommitment: vm.envUint("COMMITMENT")
         });
 
@@ -26,6 +27,7 @@ contract Generate is Script {
         console.log(string.concat("Registry:\t", vm.toString(verifierMessage.registry)));
         console.log(string.concat("Cred. Group Id:\t", vm.toString(verifierMessage.credentialGroupId)));
         console.log(string.concat("BlindedId:\t", vm.toString(verifierMessage.credentialId)));
+        console.log(string.concat("App ID:\t\t", vm.toString(verifierMessage.appId)));
         console.log(string.concat("Commitment:\t", vm.envString("COMMITMENT")));
         console.log(string.concat("Signature:\t", vm.toString(abi.encodePacked(r, s, v))));
     }

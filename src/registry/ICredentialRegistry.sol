@@ -17,7 +17,6 @@ interface ICredentialRegistry {
     }
 
     struct CredentialGroup {
-        uint256 semaphoreGroupId;
         CredentialGroupStatus status;
     }
 
@@ -38,7 +37,6 @@ interface ICredentialRegistry {
     struct CredentialGroupProof {
         uint256 credentialGroupId;
         uint256 appId;
-        bytes nullifierProof;
         ISemaphore.SemaphoreProof semaphoreProof;
     }
 
@@ -46,6 +44,7 @@ interface ICredentialRegistry {
         address registry;
         uint256 credentialGroupId;
         bytes32 credentialId;
+        uint256 appId;
         uint256 semaphoreIdentityCommitment;
     }
 

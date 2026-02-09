@@ -5,7 +5,6 @@ import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
 import {IScorer} from "./IScorer.sol";
 import {DefaultScorer} from "./DefaultScorer.sol";
-import {INullifierVerifier} from "./INullifierVerifier.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
@@ -17,15 +16,10 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 /// using Semaphore zero-knowledge proofs. Each credential group carries a score;
 /// the `score()` function aggregates scores across multiple credential proofs.
 ///
-/// App-specific identities: each app derives a unique Semaphore commitment from the
-/// user's secret base + app ID. The NullifierVerifier (Noir circuit) proves the
-/// Semaphore nullifier was correctly derived for that app, preventing cross-app
+/// Per-app Semaphore groups: each (credentialGroup, app) pair gets its own Semaphore
+/// group, created lazily on first credential registration. Since Semaphore enforces
+/// per-group nullifier uniqueness, separate groups per app naturally prevent cross-app
 /// proof replay.
-///
-/// Two ZK proofs are validated per credential proof:
-///   1. Semaphore proof — proves group membership without revealing identity
-///   2. Nullifier proof (via NullifierVerifier) — proves the nullifier is correctly
-///      bound to the app, and tracks nullifier uniqueness
 contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     using ECDSA for bytes32;
 
@@ -38,23 +32,23 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// (TLSN, OAuth, zkPassport, etc.).
     mapping(address => bool) public trustedVerifiers;
 
-    /// @notice Address of the NullifierVerifier contract (Noir HonkVerifier wrapper).
-    /// Verifies the nullifier proof that the Semaphore nullifier was correctly derived
-    /// for the app, and tracks used nullifiers to prevent double-spending.
-    address public nullifierVerifier;
-
-    /// @notice Registry of credential groups. Each group has a backing
-    /// Semaphore group ID and a status (UNDEFINED / ACTIVE / SUSPENDED).
+    /// @notice Registry of credential groups. Each group has a status (UNDEFINED / ACTIVE / SUSPENDED).
     mapping(uint256 credentialGroupId => CredentialGroup) public credentialGroups;
 
     /// @notice Registry of apps. Each app has a status (UNDEFINED / ACTIVE / SUSPENDED).
     /// Apps must be registered before users can register credentials or submit proofs for them.
     mapping(uint256 appId => App) public apps;
 
+    /// @notice Maps (credentialGroupId, appId) to the Semaphore group ID for that pair.
+    /// Created lazily on first credential registration for the pair.
+    mapping(uint256 credentialGroupId => mapping(uint256 appId => uint256 semaphoreGroupId)) public appSemaphoreGroups;
+
+    /// @notice Tracks whether a Semaphore group has been created for a (credentialGroup, app) pair.
+    mapping(uint256 credentialGroupId => mapping(uint256 appId => bool)) public appSemaphoreGroupCreated;
+
     /// @notice Tracks registered credentials to prevent duplicate registrations.
-    /// Key = keccak256(registry, credentialGroupId, credentialId), which ensures
-    /// one credential per (credential group, app-specific credential identity) pair
-    /// while allowing different Semaphore commitments across groups.
+    /// Key = keccak256(registry, credentialGroupId, credentialId, appId), which ensures
+    /// one credential per (credential group, app, credential identity) tuple.
     mapping(bytes32 => bool) public credentialRegistered;
 
     /// @notice Maps registration hash to the Semaphore identity commitment that was registered.
@@ -76,13 +70,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
-    /// @param nullifierVerifier_ Address of the NullifierVerifier contract.
-    constructor(ISemaphore semaphore_, address trustedVerifier_, address nullifierVerifier_) {
+    constructor(ISemaphore semaphore_, address trustedVerifier_) {
         require(trustedVerifier_ != address(0), "Invalid trusted verifier address");
-        require(nullifierVerifier_ != address(0), "Invalid nullifier verifier address");
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
-        nullifierVerifier = nullifierVerifier_;
 
         DefaultScorer _scorer = new DefaultScorer();
         _scorer.transferOwnership(msg.sender);
@@ -136,39 +127,48 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
     /// @notice Register a credential using a verifier-signed attestation.
     /// @dev Validates the attestation and adds the user's Semaphore commitment to the
-    ///      backing Semaphore group. The flow:
-    ///      1. Compute registration hash from (registry, credentialGroupId, credentialId) — excludes
-    ///         the Semaphore commitment so the same user (credentialId) cannot register the same
-    ///         credential twice, even with different commitments.
-    ///      2. Verify the credential group is active.
+    ///      per-app Semaphore group. The flow:
+    ///      1. Compute registration hash from (registry, credentialGroupId, credentialId, appId).
+    ///      2. Verify the credential group and app are active.
     ///      3. Verify the attestation was signed by a trusted verifier.
-    ///      4. Mark the credential as registered and add the commitment to the Semaphore group.
+    ///      4. Lazily create the per-app Semaphore group if needed.
+    ///      5. Mark the credential as registered and add the commitment to the Semaphore group.
     /// @param attestation_ The attestation struct containing:
     ///        - registry: must match this contract's address
     ///        - credentialGroupId: the group to join
     ///        - credentialId: app-specific credential identity (used for dedup)
+    ///        - appId: the app this credential is for
     ///        - semaphoreIdentityCommitment: the Semaphore identity commitment to register
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
-        CredentialGroup memory _credentialGroup = credentialGroups[attestation_.credentialGroupId];
-        bytes32 registrationHash =
-            keccak256(abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId));
-
-        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
+        require(
+            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
+
+        bytes32 registrationHash = keccak256(
+            abi.encode(
+                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
+            )
+        );
         require(!credentialRegistered[registrationHash], "Credential already registered");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-
         require(trustedVerifiers[signer], "Untrusted verifier");
+
+        // Lazily create the per-app Semaphore group
+        uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
 
         credentialRegistered[registrationHash] = true;
         registeredCommitments[registrationHash] = attestation_.semaphoreIdentityCommitment;
-        SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
+        SEMAPHORE.addMember(semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
         emit CredentialRegistered(
             attestation_.credentialGroupId,
+            attestation_.appId,
             attestation_.semaphoreIdentityCommitment,
             attestation_.credentialId,
             registrationHash,
@@ -180,45 +180,43 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     //  Proof validation
     // ──────────────────────────────────────────────
 
-    /// @notice Validates a credential group proof consisting of a Semaphore ZK proof
-    ///         and a nullifier proof.
+    /// @notice Validates a credential group proof via Semaphore ZK proof against
+    ///         the per-app Semaphore group.
     /// @dev The validation flow:
     ///      1. Check the credential group and app are active.
     ///      2. Verify scope binding: scope must equal keccak256(msg.sender, context_),
     ///         which ties the proof to the caller and prevents replay across addresses.
-    ///      3. Validate the Semaphore proof on-chain (proves group membership).
+    ///      3. Require that the per-app Semaphore group exists.
+    ///      4. Validate the Semaphore proof on-chain (proves group membership).
     ///         Semaphore also enforces per-group nullifier uniqueness internally.
-    ///      4. Call NullifierVerifier.verifyProof() which:
-    ///         - Verifies the Noir circuit proof that the nullifier was correctly derived
-    ///           from (secret_base + appId), binding the proof to the correct app identity
-    ///         - Tracks the nullifier as used globally, preventing double-spending
-    ///         - Reverts if the nullifier was already used or the proof is invalid
     /// @param context_ Application-defined context value. Combined with msg.sender to
     ///        compute the expected scope, allowing the same user to generate distinct
     ///        proofs for different contexts.
     /// @param proof_ The credential group proof containing:
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
-    ///        - nullifierProof: serialized Noir/UltraHonk proof for nullifier correctness
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
     function validateProof(uint256 context_, CredentialGroupProof memory proof_) public {
-        CredentialGroup memory _credentialGroup = credentialGroups[proof_.credentialGroupId];
-        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
+        require(
+            credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
         require(apps[proof_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(proof_.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context_))), "Wrong scope");
+        require(
+            appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId],
+            "No Semaphore group for this credential group and app"
+        );
 
-        SEMAPHORE.validateProof(_credentialGroup.semaphoreGroupId, proof_.semaphoreProof);
+        uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
+        SEMAPHORE.validateProof(semaphoreGroupId, proof_.semaphoreProof);
 
-        uint256 semaphoreNullifier = proof_.semaphoreProof.nullifier;
-        INullifierVerifier(nullifierVerifier)
-            .verifyProof(bytes32(semaphoreNullifier), proof_.appId, proof_.semaphoreProof.scope, proof_.nullifierProof);
-
-        emit ProofValidated(proof_.credentialGroupId, proof_.appId, semaphoreNullifier);
+        emit ProofValidated(proof_.credentialGroupId, proof_.appId, proof_.semaphoreProof.nullifier);
     }
 
     /// @notice Validates multiple credential group proofs and returns the sum of their scores.
     /// @dev Iterates over each proof, accumulates the group's score, and calls validateProof()
-    ///      which performs full Semaphore + nullifier verification. If any proof is invalid,
+    ///      which performs full Semaphore verification. If any proof is invalid,
     ///      the entire transaction reverts.
     /// @param context_ Application-defined context value (see validateProof).
     /// @param proofs_ Array of credential group proofs to validate.
@@ -238,8 +236,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     // ──────────────────────────────────────────────
 
     /// @notice Creates a new credential group with the given ID.
-    /// @dev Also creates a corresponding Semaphore group on-chain.
-    ///      The credential group ID is user-defined (not auto-incremented) and must be > 0.
+    /// @dev The credential group ID is user-defined (not auto-incremented) and must be > 0.
+    ///      Per-app Semaphore groups are created lazily during credential registration.
     ///      Scores are managed separately by Scorer contracts, not by the registry.
     /// @param credentialGroupId_ The unique identifier for this credential group (must be > 0).
     function createCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
@@ -247,8 +245,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(
             credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED, "Credential group exists"
         );
-        CredentialGroup memory _credentialGroup =
-            CredentialGroup(SEMAPHORE.createGroup(), ICredentialRegistry.CredentialGroupStatus.ACTIVE);
+        CredentialGroup memory _credentialGroup = CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE);
         credentialGroups[credentialGroupId_] = _credentialGroup;
         credentialGroupIds.push(credentialGroupId_);
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
@@ -298,14 +295,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit TrustedVerifierRemoved(verifier_);
     }
 
-    /// @notice Updates the NullifierVerifier contract address used for nullifier proof verification.
-    /// @param nullifierVerifier_ The new NullifierVerifier address (must not be zero).
-    function setNullifierVerifier(address nullifierVerifier_) public onlyOwner {
-        require(nullifierVerifier_ != address(0), "Invalid nullifier verifier address");
-        nullifierVerifier = nullifierVerifier_;
-        emit NullifierVerifierSet(nullifierVerifier_);
-    }
-
     /// @notice Sets the recovery timelock duration for an app.
     /// @dev Only callable by the app admin. Recovery timelock must be > 0.
     /// @param appId_ The app ID to configure.
@@ -346,13 +335,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      and delegates to the main initiateRecovery implementation.
     /// @param attestation_ Attestation with the same credentialId but a new commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
-    /// @param appId_ The app whose recovery timelock governs this recovery.
     /// @param merkleProofSiblings_ Merkle proof siblings for removing the old commitment from
     ///        the Semaphore group.
     function initiateRecovery(
         Attestation memory attestation_,
         bytes memory signature_,
-        uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) public {
         require(signature_.length == 65, "Bad signature length");
@@ -364,7 +351,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             s := mload(add(signature_, 0x40))
             v := byte(0, mload(add(signature_, 0x60)))
         }
-        initiateRecovery(attestation_, v, r, s, appId_, merkleProofSiblings_);
+        initiateRecovery(attestation_, v, r, s, merkleProofSiblings_);
     }
 
     /// @notice Initiates recovery for a credential.
@@ -376,56 +363,55 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      During the timelock period the user has no valid commitment in the group
     ///      (intentional — prevents use of a compromised identity).
     /// @param attestation_ Attestation with the same credentialId but a new semaphoreIdentityCommitment.
+    ///        The appId field determines which app's recovery timelock governs this recovery.
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    /// @param appId_ The app whose recovery timelock governs this recovery.
     /// @param merkleProofSiblings_ Merkle proof siblings for the old commitment in the Semaphore group.
     function initiateRecovery(
         Attestation memory attestation_,
         uint8 v,
         bytes32 r,
         bytes32 s,
-        uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) public {
         bytes32 registrationHash = keccak256(
-            abi.encode(attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId)
+            abi.encode(
+                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
+            )
         );
 
         require(
             credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "Credential group is inactive"
         );
-        require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
         require(credentialRegistered[registrationHash], "Credential not registered");
         require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery already pending");
-        require(apps[appId_].recoveryTimelock > 0, "Recovery not enabled for app");
+        require(apps[attestation_.appId].recoveryTimelock > 0, "Recovery not enabled for app");
 
         {
             (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
             require(trustedVerifiers[signer], "Untrusted verifier");
         }
 
-        _executeInitiateRecovery(attestation_, appId_, registrationHash, merkleProofSiblings_);
+        _executeInitiateRecovery(attestation_, registrationHash, merkleProofSiblings_);
     }
 
     function _executeInitiateRecovery(
         Attestation memory attestation_,
-        uint256 appId_,
         bytes32 registrationHash,
         uint256[] calldata merkleProofSiblings_
     ) internal {
         uint256 oldCommitment = registeredCommitments[registrationHash];
-        SEMAPHORE.removeMember(
-            credentialGroups[attestation_.credentialGroupId].semaphoreGroupId, oldCommitment, merkleProofSiblings_
-        );
+        uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
+        SEMAPHORE.removeMember(semaphoreGroupId, oldCommitment, merkleProofSiblings_);
 
-        uint256 executeAfter = block.timestamp + apps[appId_].recoveryTimelock;
+        uint256 executeAfter = block.timestamp + apps[attestation_.appId].recoveryTimelock;
         pendingRecoveries[registrationHash] = RecoveryRequest({
             credentialGroupId: attestation_.credentialGroupId,
-            appId: appId_,
+            appId: attestation_.appId,
             newCommitment: attestation_.semaphoreIdentityCommitment,
             executeAfter: executeAfter
         });
@@ -448,14 +434,38 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(request.executeAfter != 0, "No pending recovery");
         require(block.timestamp >= request.executeAfter, "Recovery timelock not expired");
 
-        CredentialGroup memory _credentialGroup = credentialGroups[request.credentialGroupId];
-        require(_credentialGroup.status == CredentialGroupStatus.ACTIVE, "Credential group is inactive");
+        require(
+            credentialGroups[request.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
         require(apps[request.appId].status == AppStatus.ACTIVE, "App is not active");
 
-        SEMAPHORE.addMember(_credentialGroup.semaphoreGroupId, request.newCommitment);
+        uint256 semaphoreGroupId = appSemaphoreGroups[request.credentialGroupId][request.appId];
+        SEMAPHORE.addMember(semaphoreGroupId, request.newCommitment);
         registeredCommitments[registrationHash_] = request.newCommitment;
         delete pendingRecoveries[registrationHash_];
 
         emit RecoveryExecuted(registrationHash_, request.newCommitment);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Internal helpers
+    // ──────────────────────────────────────────────
+
+    /// @dev Ensures a Semaphore group exists for the (credentialGroupId, appId) pair.
+    ///      Creates one lazily if it doesn't exist yet.
+    /// @return semaphoreGroupId The Semaphore group ID for the pair.
+    function _ensureAppSemaphoreGroup(uint256 credentialGroupId_, uint256 appId_)
+        internal
+        returns (uint256 semaphoreGroupId)
+    {
+        if (!appSemaphoreGroupCreated[credentialGroupId_][appId_]) {
+            semaphoreGroupId = SEMAPHORE.createGroup();
+            appSemaphoreGroups[credentialGroupId_][appId_] = semaphoreGroupId;
+            appSemaphoreGroupCreated[credentialGroupId_][appId_] = true;
+            emit AppSemaphoreGroupCreated(credentialGroupId_, appId_, semaphoreGroupId);
+        } else {
+            semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];
+        }
     }
 }

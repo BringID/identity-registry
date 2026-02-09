@@ -2,10 +2,9 @@
 
 // Register a credential on-chain.
 //
-// Creates a Semaphore identity from a secretBase + appId (compatible with the
-// NullifierVerifier circuit), builds an Attestation struct, signs it with
-// the deployer key (which must be a trusted verifier), and calls
-// registerCredential() on the CredentialRegistry.
+// Creates a Semaphore identity from a secretBase + appId, builds an Attestation
+// struct (now includes appId), signs it with the deployer key (which must be a
+// trusted verifier), and calls registerCredential() on the CredentialRegistry.
 //
 // Required env vars:
 //   PRIVATE_KEY            — deployer / trusted-verifier private key (hex, no 0x prefix)
@@ -69,10 +68,11 @@ const wallet = new ethers.NonceManager(signer);
 
 // Minimal ABI — only the functions we call / read
 const registryAbi = [
-    "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 semaphoreIdentityCommitment) attestation, uint8 v, bytes32 r, bytes32 s)",
-    "function credentialGroups(uint256) view returns (uint256 semaphoreGroupId, uint8 status)",
+    "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment) attestation, uint8 v, bytes32 r, bytes32 s)",
+    "function credentialGroups(uint256) view returns (uint8 status)",
     "function trustedVerifiers(address) view returns (bool)",
     "function createCredentialGroup(uint256 credentialGroupId)",
+    "function appIsActive(uint256) view returns (bool)",
 ];
 
 const registry = new ethers.Contract(REGISTRY_ADDRESS, registryAbi, wallet);
@@ -80,7 +80,6 @@ const registry = new ethers.Contract(REGISTRY_ADDRESS, registryAbi, wallet);
 // ── Identity (secretBase + appId → Semaphore commitment) ─────────────────
 
 // identitySecret = poseidon2([secretBase, appId])
-// This matches the NullifierVerifier circuit: secret_base + app_id → identity_secret
 const identitySecret = poseidon2([secretBase, appId]);
 
 // The Semaphore v4 circuit requires secret < subOrder (BabyJubJub prime subgroup order).
@@ -117,7 +116,7 @@ console.log("Credential ID:  ", credentialId);
 
 // ── Ensure credential group exists ───────────────────────────────────────────
 
-const [, groupStatus] = await registry.credentialGroups(credentialGroupId);
+const groupStatus = await registry.credentialGroups(credentialGroupId);
 if (groupStatus !== 1n) {
     if (args["create-group"]) {
         console.log(`Creating credential group ${credentialGroupId}...`);
@@ -135,6 +134,12 @@ if (groupStatus !== 1n) {
     }
 }
 
+const appActive = await registry.appIsActive(appId);
+if (!appActive) {
+    console.error(`App ${appId} is not active. Register the app first.`);
+    process.exit(1);
+}
+
 const isTrusted = await registry.trustedVerifiers(signer.address);
 if (!isTrusted) {
     console.error(
@@ -149,17 +154,19 @@ const attestation = {
     registry: REGISTRY_ADDRESS,
     credentialGroupId,
     credentialId,
+    appId,
     semaphoreIdentityCommitment: commitment,
 };
 
 // Encode the attestation the same way Solidity does:
 //   keccak256(abi.encode(attestation))
 const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["address", "uint256", "bytes32", "uint256"],
+    ["address", "uint256", "bytes32", "uint256", "uint256"],
     [
         attestation.registry,
         attestation.credentialGroupId,
         attestation.credentialId,
+        attestation.appId,
         attestation.semaphoreIdentityCommitment,
     ]
 );
@@ -180,6 +187,7 @@ const tx = await registry.registerCredential(
         attestation.registry,
         attestation.credentialGroupId,
         attestation.credentialId,
+        attestation.appId,
         attestation.semaphoreIdentityCommitment,
     ],
     signature.v,

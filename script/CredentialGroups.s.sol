@@ -34,17 +34,17 @@ contract Register is Script {
         scorer.setScore(5, 10);
         vm.stopBroadcast();
 
-        (uint256 semaphoreGroupId,) = registry.credentialGroups(99);
-        console.log("99:", semaphoreGroupId);
-        (semaphoreGroupId,) = registry.credentialGroups(1);
-        console.log("1:", semaphoreGroupId);
-        (semaphoreGroupId,) = registry.credentialGroups(2);
-        console.log("2:", semaphoreGroupId);
-        (semaphoreGroupId,) = registry.credentialGroups(3);
-        console.log("3:", semaphoreGroupId);
-        (semaphoreGroupId,) = registry.credentialGroups(4);
-        console.log("4:", semaphoreGroupId);
-        (semaphoreGroupId,) = registry.credentialGroups(5);
-        console.log("5:", semaphoreGroupId);
+        (ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(99);
+        console.log("99:", uint256(status));
+        (status) = registry.credentialGroups(1);
+        console.log("1:", uint256(status));
+        (status) = registry.credentialGroups(2);
+        console.log("2:", uint256(status));
+        (status) = registry.credentialGroups(3);
+        console.log("3:", uint256(status));
+        (status) = registry.credentialGroups(4);
+        console.log("4:", uint256(status));
+        (status) = registry.credentialGroups(5);
+        console.log("5:", uint256(status));
     }
 }

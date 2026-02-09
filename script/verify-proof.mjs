@@ -4,8 +4,7 @@
 //
 // Generates a Semaphore ZK proof for a previously registered credential and
 // calls validateProof() on-chain. Uses secretBase + appId to derive the
-// Semaphore identity (compatible with the NullifierVerifier circuit) and
-// generates a real nullifier proof via @bringid/nullifier.
+// Semaphore identity and generates a proof against the per-app Semaphore group.
 //
 // Required env vars:
 //   PRIVATE_KEY            — wallet private key (hex, no 0x prefix)
@@ -25,11 +24,6 @@ import { generateProof, Group } from "@semaphore-protocol/core";
 import { SemaphoreEthers } from "@semaphore-protocol/data";
 import { poseidon2 } from "poseidon-lite/poseidon2";
 import { mulPointEscalar, Base8, subOrder } from "@zk-kit/baby-jubjub";
-import {
-    createIdentity as createNullifierIdentity,
-    generateProof as generateNullifierProof,
-    cleanup as cleanupNullifier,
-} from "@bringid/nullifier";
 import { parseArgs } from "node:util";
 
 // ── CLI args ────────────────────────────────────────────────────────────────
@@ -40,7 +34,6 @@ const { values: args } = parseArgs({
         "app-id": { type: "string" },
         "secret-base": { type: "string" },
         context: { type: "string" },
-        "skip-nullifier-proof": { type: "boolean", default: false },
     },
 });
 
@@ -86,8 +79,10 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const registryAbi = [
-    "function validateProof(uint256 context, (uint256 credentialGroupId, uint256 appId, bytes nullifierProof, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
-    "function credentialGroups(uint256) view returns (uint256 semaphoreGroupId, uint8 status)",
+    "function validateProof(uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
+    "function credentialGroups(uint256) view returns (uint8 status)",
+    "function appSemaphoreGroups(uint256, uint256) view returns (uint256)",
+    "function appSemaphoreGroupCreated(uint256, uint256) view returns (bool)",
     "function apps(uint256) view returns (uint8 status, uint256 recoveryTimelock, address admin, address scorer)",
     "event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier)",
 ];
@@ -96,7 +91,7 @@ const registry = new ethers.Contract(REGISTRY_ADDRESS, registryAbi, wallet);
 
 // ── Reconstruct identity from secretBase + appId ────────────────────────────
 
-// identitySecret = poseidon2([secretBase, appId]) — matches NullifierVerifier circuit
+// identitySecret = poseidon2([secretBase, appId])
 const identitySecret = poseidon2([secretBase, appId]);
 
 // The Semaphore v4 circuit requires secret < subOrder (BabyJubJub prime subgroup order).
@@ -124,7 +119,7 @@ console.log("Identity commitment:", commitment.toString());
 
 // ── Pre-flight checks ───────────────────────────────────────────────────────
 
-const [semaphoreGroupId, groupStatus] = await registry.credentialGroups(credentialGroupId);
+const groupStatus = await registry.credentialGroups(credentialGroupId);
 if (groupStatus !== 1n) {
     console.error(
         `Credential group ${credentialGroupId} is not active (status=${groupStatus}).`
@@ -138,6 +133,15 @@ if (appStatus !== 1n) {
     process.exit(1);
 }
 
+const groupCreated = await registry.appSemaphoreGroupCreated(credentialGroupId, appId);
+if (!groupCreated) {
+    console.error(
+        `No Semaphore group exists for credential group ${credentialGroupId} + app ${appId}. Register a credential first.`
+    );
+    process.exit(1);
+}
+
+const semaphoreGroupId = await registry.appSemaphoreGroups(credentialGroupId, appId);
 console.log("Semaphore group ID:", semaphoreGroupId.toString());
 
 // ── Fetch group members ─────────────────────────────────────────────────────
@@ -202,40 +206,11 @@ console.log("  Merkle tree root: ", semaphoreProof.merkleTreeRoot);
 console.log("  Nullifier:        ", semaphoreProof.nullifier);
 console.log("  Message:          ", semaphoreProof.message);
 
-// ── Generate nullifier proof ────────────────────────────────────────────────
-
-let nullifierProof = "0x"; // dummy for mock verifier
-
-if (!args["skip-nullifier-proof"]) {
-    console.log("Generating nullifier proof (Noir/UltraHonk)...");
-
-    const nullifierIdentity = createNullifierIdentity(secretBase, appId);
-    const nullifierResult = await generateNullifierProof(nullifierIdentity, scope);
-
-    console.log("Nullifier proof generated:");
-    console.log("  Nullifier:        ", nullifierResult.nullifier.toString());
-    console.log("  Proof length:     ", nullifierResult.proof.length, "chars");
-
-    // Verify the nullifier from the Semaphore proof matches the nullifier circuit
-    const semaphoreNullifier = BigInt(semaphoreProof.nullifier);
-    if (semaphoreNullifier !== nullifierResult.nullifier) {
-        console.error("WARNING: Semaphore nullifier does not match nullifier circuit output!");
-        console.error("  Semaphore:  ", semaphoreNullifier.toString());
-        console.error("  Nullifier:  ", nullifierResult.nullifier.toString());
-    }
-
-    nullifierProof = nullifierResult.proof;
-    await cleanupNullifier();
-} else {
-    console.log("Skipping nullifier proof generation (--skip-nullifier-proof)");
-}
-
 // ── Build CredentialGroupProof struct ───────────────────────────────────────
 
 const proof = {
     credentialGroupId,
     appId,
-    nullifierProof,
     semaphoreProof: {
         merkleTreeDepth: semaphoreProof.merkleTreeDepth,
         merkleTreeRoot: semaphoreProof.merkleTreeRoot,

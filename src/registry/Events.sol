@@ -4,8 +4,10 @@ pragma solidity ^0.8.23;
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
 
 event CredentialGroupCreated(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroup credentialGroup);
+event AppSemaphoreGroupCreated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 semaphoreGroupId);
 event CredentialRegistered(
     uint256 indexed credentialGroupId,
+    uint256 indexed appId,
     uint256 indexed commitment,
     bytes32 credentialId,
     bytes32 registrationHash,
@@ -15,7 +17,6 @@ event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, u
 
 event TrustedVerifierAdded(address indexed verifier);
 event TrustedVerifierRemoved(address indexed verifier);
-event NullifierVerifierSet(address indexed verifier);
 
 event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
 event AppSuspended(uint256 indexed appId);

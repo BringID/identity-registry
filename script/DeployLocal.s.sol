@@ -8,13 +8,8 @@ import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
 import {Semaphore} from "semaphore-protocol/Semaphore.sol";
 import {Script, console} from "forge-std/Script.sol";
 
-/// @dev Dummy NullifierVerifier that accepts any proof (for local testing).
-contract MockNullifierVerifier {
-    function verifyProof(bytes32, uint256, uint256, bytes calldata) external pure {}
-}
-
 /// @notice Deploys everything needed for local e2e testing:
-///         SemaphoreVerifier -> Semaphore -> MockNullifierVerifier -> CredentialRegistry
+///         SemaphoreVerifier -> Semaphore -> CredentialRegistry
 ///         The deployer is set as the trusted verifier so they can sign attestations.
 contract DeployLocal is Script {
     function run() public {
@@ -25,9 +20,7 @@ contract DeployLocal is Script {
 
         SemaphoreVerifier semaphoreVerifier = new SemaphoreVerifier();
         Semaphore semaphore = new Semaphore(ISemaphoreVerifier(address(semaphoreVerifier)));
-        MockNullifierVerifier mockNullifierVerifier = new MockNullifierVerifier();
-        CredentialRegistry registry =
-            new CredentialRegistry(ISemaphore(address(semaphore)), deployer, address(mockNullifierVerifier));
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), deployer);
 
         // Register a default app (appId = 1), caller = deployer = admin
         uint256 appId = registry.registerApp(0);
@@ -37,7 +30,6 @@ contract DeployLocal is Script {
         console.log("Deployer:            ", deployer);
         console.log("SemaphoreVerifier:   ", address(semaphoreVerifier));
         console.log("Semaphore:           ", address(semaphore));
-        console.log("NullifierVerifier:   ", address(mockNullifierVerifier));
         console.log("CredentialRegistry:  ", address(registry));
         console.log("DefaultScorer:       ", registry.defaultScorer());
         console.log("App ID:              ", appId);
