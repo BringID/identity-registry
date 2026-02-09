@@ -340,13 +340,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     /// @notice Sets the recovery timelock duration for an app.
-    /// @dev Only callable by the app admin. Recovery timelock must be > 0.
+    /// @dev Only callable by the app admin. Set to 0 to disable recovery.
     /// @param appId_ The app ID to configure.
-    /// @param recoveryTimelock_ The timelock duration in seconds (must be > 0).
+    /// @param recoveryTimelock_ The timelock duration in seconds (0 to disable recovery).
     function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public {
         require(apps[appId_].admin == msg.sender, "Not app admin");
         require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
-        require(recoveryTimelock_ > 0, "Recovery timelock must be positive");
         apps[appId_].recoveryTimelock = recoveryTimelock_;
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
     }

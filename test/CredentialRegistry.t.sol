@@ -813,8 +813,15 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetAppRecoveryTimelockZero() public {
-        vm.expectRevert("Recovery timelock must be positive");
+        // First enable recovery
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+        (, uint256 timelock,,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(timelock, 1 days);
+
+        // Disable recovery by setting to 0
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 0);
+        (, timelock,,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(timelock, 0);
     }
 
     // --- Initiate recovery tests ---

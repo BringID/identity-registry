@@ -5,9 +5,6 @@ out/
 # Broadcast logs
 broadcast/
 
-# Docs
-docs/
-
 # Dotenv file
 .env
 
