@@ -67,6 +67,10 @@ contract CredentialRegistryTest is Test {
         uint256 executeAfter
     );
     event RecoveryExecuted(bytes32 indexed registrationHash, uint256 newCommitment);
+    event CredentialExpired(
+        uint256 indexed credentialGroupId, uint256 indexed appId, bytes32 credentialId, bytes32 registrationHash
+    );
+    event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
 
     function setUp() public {
         owner = address(this);
@@ -173,12 +177,12 @@ contract CredentialRegistryTest is Test {
 
         vm.expectEmit(true, false, false, true);
         emit CredentialGroupCreated(
-            credentialGroupId, ICredentialRegistry.CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE)
+            credentialGroupId, ICredentialRegistry.CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, 0)
         );
 
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
-        (ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(credentialGroupId);
+        (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(credentialGroupId);
         assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
     }
 
@@ -187,29 +191,29 @@ contract CredentialRegistryTest is Test {
 
         vm.prank(notOwner);
         vm.expectRevert("Ownable: caller is not the owner");
-        registry.createCredentialGroup(1);
+        registry.createCredentialGroup(1, 0);
     }
 
     function testCreateCredentialGroupDuplicate() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         vm.expectRevert("Credential group exists");
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
     }
 
     function testFuzzNewVerification(uint256 credentialGroupId) public {
         vm.assume(credentialGroupId != 0 && credentialGroupId < type(uint256).max);
 
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
-        (ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(credentialGroupId);
+        (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(credentialGroupId);
         assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
     }
 
     function testCreateCredentialGroupShouldRejectZeroId() public {
         vm.expectRevert();
-        registry.createCredentialGroup(0);
+        registry.createCredentialGroup(0, 0);
     }
 
     // --- Trusted verifier tests ---
@@ -363,7 +367,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredential() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -380,7 +384,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialWithBytes() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -412,7 +416,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialAppNotActive() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -428,7 +432,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialWrongRegistry() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -449,7 +453,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialUsedNonce() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -466,7 +470,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialUsedNonceWithDifferentCommitment() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
@@ -489,7 +493,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialSameUserDifferentApps() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 app2 = registry.registerApp(0);
 
@@ -506,7 +510,7 @@ contract CredentialRegistryTest is Test {
 
     function testRegisterCredentialInvalidSignature() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
@@ -524,7 +528,7 @@ contract CredentialRegistryTest is Test {
 
     function testLazySemaphoreGroupCreation() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         // No Semaphore group should exist yet
         assertFalse(registry.appSemaphoreGroupCreated(credentialGroupId, DEFAULT_APP_ID));
@@ -540,7 +544,7 @@ contract CredentialRegistryTest is Test {
 
     function testSecondRegistrationReusesSemaphoreGroup() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
         uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
@@ -556,7 +560,7 @@ contract CredentialRegistryTest is Test {
 
     function testDifferentAppsDifferentSemaphoreGroups() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 app2 = registry.registerApp(0);
 
@@ -576,7 +580,7 @@ contract CredentialRegistryTest is Test {
 
     function testValidateProof() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
@@ -617,7 +621,7 @@ contract CredentialRegistryTest is Test {
 
     function testValidateProofAppNotActive() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 inactiveAppId = 999;
 
@@ -640,7 +644,7 @@ contract CredentialRegistryTest is Test {
 
     function testValidateProofWrongScope() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
@@ -659,7 +663,7 @@ contract CredentialRegistryTest is Test {
 
     function testValidateProofNoSemaphoreGroup() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         // Don't register any credential — no Semaphore group exists
 
@@ -692,8 +696,8 @@ contract CredentialRegistryTest is Test {
         uint256 score1 = 100;
         uint256 score2 = 200;
 
-        registry.createCredentialGroup(credentialGroupId1);
-        registry.createCredentialGroup(credentialGroupId2);
+        registry.createCredentialGroup(credentialGroupId1, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0);
         scorer.setScore(credentialGroupId1, score1);
         scorer.setScore(credentialGroupId2, score2);
 
@@ -719,8 +723,8 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId1 = 1;
         uint256 credentialGroupId2 = 2;
 
-        registry.createCredentialGroup(credentialGroupId1);
-        registry.createCredentialGroup(credentialGroupId2);
+        registry.createCredentialGroup(credentialGroupId1, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0);
 
         // Set default scores
         scorer.setScore(credentialGroupId1, 100);
@@ -756,7 +760,7 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId1 = 1;
         uint256 credentialGroupId2 = 2;
 
-        registry.createCredentialGroup(credentialGroupId1);
+        registry.createCredentialGroup(credentialGroupId1, 0);
         scorer.setScore(credentialGroupId1, 100);
         // Don't create credentialGroupId2, it will be inactive
 
@@ -841,7 +845,7 @@ contract CredentialRegistryTest is Test {
 
     function testInitiateRecovery() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -872,7 +876,7 @@ contract CredentialRegistryTest is Test {
 
     function testInitiateRecoveryWithBytes() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -897,7 +901,7 @@ contract CredentialRegistryTest is Test {
 
     function testInitiateRecoveryNotRegistered() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -911,7 +915,7 @@ contract CredentialRegistryTest is Test {
 
     function testInitiateRecoveryAlreadyPending() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -930,7 +934,7 @@ contract CredentialRegistryTest is Test {
 
     function testInitiateRecoveryNotEnabled() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
         uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
@@ -948,7 +952,7 @@ contract CredentialRegistryTest is Test {
 
     function testExecuteRecovery() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -978,7 +982,7 @@ contract CredentialRegistryTest is Test {
 
     function testExecuteRecoveryTimelockNotExpired() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId);
+        registry.createCredentialGroup(credentialGroupId, 0);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
@@ -1004,5 +1008,183 @@ contract CredentialRegistryTest is Test {
 
         vm.expectRevert("No pending recovery");
         registry.executeRecovery(fakeHash);
+    }
+
+    // --- Credential expiry tests ---
+
+    function testCreateCredentialGroupWithValidityDuration() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupCreated(
+            credentialGroupId,
+            ICredentialRegistry.CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration)
+        );
+
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        (ICredentialRegistry.CredentialGroupStatus status, uint256 duration) =
+            registry.credentialGroups(credentialGroupId);
+        assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
+        assertEq(duration, validityDuration);
+    }
+
+    function testRegisterCredentialSetsExpiry() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        assertEq(registry.credentialExpiresAt(registrationHash), block.timestamp + validityDuration);
+    }
+
+    function testRegisterCredentialNoExpiryWhenDurationZero() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        assertEq(registry.credentialExpiresAt(registrationHash), 0);
+    }
+
+    function testRemoveExpiredCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry
+        vm.warp(block.timestamp + validityDuration);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectEmit(true, true, false, true);
+        emit CredentialExpired(credentialGroupId, DEFAULT_APP_ID, credentialId, registrationHash);
+
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Verify state is cleared
+        assertFalse(registry.credentialRegistered(registrationHash));
+        assertEq(registry.registeredCommitments(registrationHash), 0);
+        assertEq(registry.credentialExpiresAt(registrationHash), 0);
+    }
+
+    function testRemoveExpiredCredentialTooEarly() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Warp to just before expiry
+        vm.warp(block.timestamp + validityDuration - 1);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("Credential not yet expired");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRemoveExpiredCredentialNotRegistered() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 30 days);
+
+        bytes32 credentialId = keccak256("nonexistent");
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("Credential not registered");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRemoveExpiredCredentialNoExpiry() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("Credential has no expiry");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testReRegisterAfterExpiry() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Re-register with a new commitment
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
+
+        assertTrue(registry.credentialRegistered(registrationHash));
+        assertEq(registry.registeredCommitments(registrationHash), commitment2);
+        assertEq(registry.credentialExpiresAt(registrationHash), block.timestamp + validityDuration);
+    }
+
+    function testSetCredentialGroupValidityDuration() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0);
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupValidityDurationSet(credentialGroupId, 7 days);
+
+        registry.setCredentialGroupValidityDuration(credentialGroupId, 7 days);
+
+        (, uint256 duration) = registry.credentialGroups(credentialGroupId);
+        assertEq(duration, 7 days);
+    }
+
+    function testSetCredentialGroupValidityDurationOnlyOwner() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0);
+
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setCredentialGroupValidityDuration(credentialGroupId, 7 days);
+    }
+
+    function testSetCredentialGroupValidityDurationNonExistent() public {
+        vm.expectRevert("Credential group does not exist");
+        registry.setCredentialGroupValidityDuration(999, 7 days);
     }
 }

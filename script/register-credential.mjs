@@ -69,9 +69,9 @@ const wallet = new ethers.NonceManager(signer);
 // Minimal ABI — only the functions we call / read
 const registryAbi = [
     "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment) attestation, uint8 v, bytes32 r, bytes32 s)",
-    "function credentialGroups(uint256) view returns (uint8 status)",
+    "function credentialGroups(uint256) view returns (uint8 status, uint256 validityDuration)",
     "function trustedVerifiers(address) view returns (bool)",
-    "function createCredentialGroup(uint256 credentialGroupId)",
+    "function createCredentialGroup(uint256 credentialGroupId, uint256 validityDuration)",
     "function appIsActive(uint256) view returns (bool)",
 ];
 
@@ -116,11 +116,11 @@ console.log("Credential ID:  ", credentialId);
 
 // ── Ensure credential group exists ───────────────────────────────────────────
 
-const groupStatus = await registry.credentialGroups(credentialGroupId);
+const [groupStatus] = await registry.credentialGroups(credentialGroupId);
 if (groupStatus !== 1n) {
     if (args["create-group"]) {
         console.log(`Creating credential group ${credentialGroupId}...`);
-        const cgTx = await registry.createCredentialGroup(credentialGroupId);
+        const cgTx = await registry.createCredentialGroup(credentialGroupId, 0);
         await cgTx.wait();
         console.log("Credential group created (tx:", cgTx.hash + ")");
         // Wait for node to index the new state before sending the next tx

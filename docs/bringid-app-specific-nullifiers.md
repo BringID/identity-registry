@@ -147,6 +147,12 @@ User / Consuming App                    Contract
 
 ---
 
+## Credential Expiry
+
+Credential groups can define a `validityDuration` (seconds, 0 = no expiry). When a user registers a credential in a group with a non-zero duration, `credentialExpiresAt` is set to `block.timestamp + validityDuration`. After expiry, anyone can call `removeExpiredCredential()` with the Merkle proof siblings to remove the commitment from the Semaphore group, clearing registration state and allowing re-registration with a fresh attestation.
+
+---
+
 ## Privacy Properties
 
 - **Unlinkable identities:** different commitment per app, derived from the same `secret_base`

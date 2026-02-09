@@ -80,7 +80,7 @@ const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const registryAbi = [
     "function submitProof(uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
-    "function credentialGroups(uint256) view returns (uint8 status)",
+    "function credentialGroups(uint256) view returns (uint8 status, uint256 validityDuration)",
     "function appSemaphoreGroups(uint256, uint256) view returns (uint256)",
     "function appSemaphoreGroupCreated(uint256, uint256) view returns (bool)",
     "function apps(uint256) view returns (uint8 status, uint256 recoveryTimelock, address admin, address scorer)",
@@ -119,7 +119,7 @@ console.log("Identity commitment:", commitment.toString());
 
 // ── Pre-flight checks ───────────────────────────────────────────────────────
 
-const groupStatus = await registry.credentialGroups(credentialGroupId);
+const [groupStatus] = await registry.credentialGroups(credentialGroupId);
 if (groupStatus !== 1n) {
     console.error(
         `Credential group ${credentialGroupId} is not active (status=${groupStatus}).`

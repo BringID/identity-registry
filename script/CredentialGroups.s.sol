@@ -20,31 +20,31 @@ contract Register is Script {
 
         DefaultScorer scorer = DefaultScorer(registry.defaultScorer());
 
-        registry.createCredentialGroup(99);
+        registry.createCredentialGroup(99, 0);
         scorer.setScore(99, 10);
-        registry.createCredentialGroup(1);
+        registry.createCredentialGroup(1, 0);
         scorer.setScore(1, 10);
-        registry.createCredentialGroup(2);
+        registry.createCredentialGroup(2, 0);
         scorer.setScore(2, 20);
-        registry.createCredentialGroup(3);
+        registry.createCredentialGroup(3, 0);
         scorer.setScore(3, 10);
-        registry.createCredentialGroup(4);
+        registry.createCredentialGroup(4, 0);
         scorer.setScore(4, 5);
-        registry.createCredentialGroup(5);
+        registry.createCredentialGroup(5, 0);
         scorer.setScore(5, 10);
         vm.stopBroadcast();
 
-        (ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(99);
+        (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(99);
         console.log("99:", uint256(status));
-        (status) = registry.credentialGroups(1);
+        (status,) = registry.credentialGroups(1);
         console.log("1:", uint256(status));
-        (status) = registry.credentialGroups(2);
+        (status,) = registry.credentialGroups(2);
         console.log("2:", uint256(status));
-        (status) = registry.credentialGroups(3);
+        (status,) = registry.credentialGroups(3);
         console.log("3:", uint256(status));
-        (status) = registry.credentialGroups(4);
+        (status,) = registry.credentialGroups(4);
         console.log("4:", uint256(status));
-        (status) = registry.credentialGroups(5);
+        (status,) = registry.credentialGroups(5);
         console.log("5:", uint256(status));
     }
 }

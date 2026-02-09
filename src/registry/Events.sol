@@ -32,3 +32,8 @@ event RecoveryInitiated(
     uint256 executeAfter
 );
 event RecoveryExecuted(bytes32 indexed registrationHash, uint256 newCommitment);
+
+event CredentialExpired(
+    uint256 indexed credentialGroupId, uint256 indexed appId, bytes32 credentialId, bytes32 registrationHash
+);
+event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);

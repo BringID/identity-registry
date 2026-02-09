@@ -55,6 +55,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// Used during recovery to look up the old commitment for removal from the Semaphore group.
     mapping(bytes32 registrationHash => uint256) public registeredCommitments;
 
+    /// @notice Maps registration hash to the timestamp at which the credential expires.
+    /// 0 means no expiry (credential lives forever).
+    mapping(bytes32 registrationHash => uint256) public credentialExpiresAt;
+
     /// @notice Maps registration hash to a pending recovery request.
     /// A non-zero executeAfter indicates an active pending recovery.
     mapping(bytes32 registrationHash => RecoveryRequest) public pendingRecoveries;
@@ -166,6 +170,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         credentialRegistered[registrationHash] = true;
         registeredCommitments[registrationHash] = attestation_.semaphoreIdentityCommitment;
         SEMAPHORE.addMember(semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
+
+        uint256 validityDuration = credentialGroups[attestation_.credentialGroupId].validityDuration;
+        if (validityDuration > 0) {
+            credentialExpiresAt[registrationHash] = block.timestamp + validityDuration;
+        }
+
         emit CredentialRegistered(
             attestation_.credentialGroupId,
             attestation_.appId,
@@ -284,15 +294,34 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      Per-app Semaphore groups are created lazily during credential registration.
     ///      Scores are managed separately by Scorer contracts, not by the registry.
     /// @param credentialGroupId_ The unique identifier for this credential group (must be > 0).
-    function createCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
+    /// @param validityDuration_ Duration in seconds for which credentials in this group remain valid
+    ///        (0 = no expiry).
+    function createCredentialGroup(uint256 credentialGroupId_, uint256 validityDuration_) public onlyOwner {
         require(credentialGroupId_ > 0, "Credential group ID cannot equal zero");
         require(
             credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED, "Credential group exists"
         );
-        CredentialGroup memory _credentialGroup = CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE);
+        CredentialGroup memory _credentialGroup =
+            CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration_);
         credentialGroups[credentialGroupId_] = _credentialGroup;
         credentialGroupIds.push(credentialGroupId_);
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
+    }
+
+    /// @notice Updates the validity duration for an existing credential group.
+    /// @dev Only affects future registrations; existing credentials keep their original expiry.
+    /// @param credentialGroupId_ The credential group ID to update.
+    /// @param validityDuration_ New duration in seconds (0 = no expiry).
+    function setCredentialGroupValidityDuration(uint256 credentialGroupId_, uint256 validityDuration_)
+        public
+        onlyOwner
+    {
+        require(
+            credentialGroups[credentialGroupId_].status != CredentialGroupStatus.UNDEFINED,
+            "Credential group does not exist"
+        );
+        credentialGroups[credentialGroupId_].validityDuration = validityDuration_;
+        emit CredentialGroupValidityDurationSet(credentialGroupId_, validityDuration_);
     }
 
     /// @notice Suspends an active credential group, preventing new registrations and proof validations.
@@ -367,6 +396,41 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(apps[appId_].admin == msg.sender, "Not app admin");
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Credential expiry
+    // ──────────────────────────────────────────────
+
+    /// @notice Removes an expired credential from its per-app Semaphore group.
+    /// @dev Anyone can call this once a credential has expired. Clears registration state
+    ///      so the user can re-register with a fresh attestation. Also clears any pending
+    ///      recovery to avoid orphaned state.
+    /// @param credentialGroupId_ The credential group the credential belongs to.
+    /// @param credentialId_ The credential identity (from the attestation).
+    /// @param appId_ The app the credential was registered for.
+    /// @param merkleProofSiblings_ Merkle proof siblings for removing the commitment from the Semaphore group.
+    function removeExpiredCredential(
+        uint256 credentialGroupId_,
+        bytes32 credentialId_,
+        uint256 appId_,
+        uint256[] calldata merkleProofSiblings_
+    ) public {
+        bytes32 registrationHash = keccak256(abi.encode(address(this), credentialGroupId_, credentialId_, appId_));
+        require(credentialRegistered[registrationHash], "Credential not registered");
+        require(credentialExpiresAt[registrationHash] > 0, "Credential has no expiry");
+        require(block.timestamp >= credentialExpiresAt[registrationHash], "Credential not yet expired");
+
+        uint256 commitment = registeredCommitments[registrationHash];
+        uint256 semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];
+        SEMAPHORE.removeMember(semaphoreGroupId, commitment, merkleProofSiblings_);
+
+        delete credentialRegistered[registrationHash];
+        delete registeredCommitments[registrationHash];
+        delete credentialExpiresAt[registrationHash];
+        delete pendingRecoveries[registrationHash];
+
+        emit CredentialExpired(credentialGroupId_, appId_, credentialId_, registrationHash);
     }
 
     // ──────────────────────────────────────────────

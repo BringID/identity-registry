@@ -18,6 +18,7 @@ interface ICredentialRegistry {
 
     struct CredentialGroup {
         CredentialGroupStatus status;
+        uint256 validityDuration; // seconds, 0 = no expiry
     }
 
     struct App {
@@ -55,4 +56,10 @@ interface ICredentialRegistry {
     function getScore(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (uint256);
     function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
     function appIsActive(uint256 appId_) external view returns (bool);
+    function removeExpiredCredential(
+        uint256 credentialGroupId_,
+        bytes32 credentialId_,
+        uint256 appId_,
+        uint256[] calldata merkleProofSiblings_
+    ) external;
 }
