@@ -592,7 +592,7 @@ contract CredentialRegistryTest is Test {
         emit ProofValidated(credentialGroupId, DEFAULT_APP_ID, proof.semaphoreProof.nullifier);
 
         vm.prank(prover);
-        registry.validateProof(0, proof);
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofInactiveVerification() public {
@@ -612,7 +612,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert("Credential group is inactive");
-        registry.validateProof(0, proof);
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofAppNotActive() public {
@@ -635,7 +635,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert("App is not active");
-        registry.validateProof(0, proof);
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofWrongScope() public {
@@ -654,7 +654,7 @@ contract CredentialRegistryTest is Test {
 
         vm.expectRevert("Wrong scope");
         vm.prank(prover);
-        registry.validateProof(0, proof);
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofNoSemaphoreGroup() public {
@@ -681,7 +681,7 @@ contract CredentialRegistryTest is Test {
 
         vm.expectRevert("No Semaphore group for this credential group and app");
         vm.prank(prover);
-        registry.validateProof(0, proof);
+        registry.submitProof(0, proof);
     }
 
     // --- Score tests ---
@@ -711,7 +711,7 @@ contract CredentialRegistryTest is Test {
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
-        uint256 totalScore = registry.score(0, proofs);
+        uint256 totalScore = registry.submitProofs(0, proofs);
         assertEq(totalScore, score1 + score2);
     }
 
@@ -748,7 +748,7 @@ contract CredentialRegistryTest is Test {
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
-        uint256 totalScore = registry.score(0, proofs);
+        uint256 totalScore = registry.submitProofs(0, proofs);
         assertEq(totalScore, 999 + 1);
     }
 
@@ -782,7 +782,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert("Credential group is inactive");
-        registry.score(0, proofs);
+        registry.submitProofs(0, proofs);
     }
 
     // --- Recovery timelock tests ---

@@ -48,8 +48,11 @@ interface ICredentialRegistry {
         uint256 semaphoreIdentityCommitment;
     }
 
-    function score(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
-    function validateProof(uint256 context, CredentialGroupProof calldata proof) external;
+    function submitProof(uint256 context_, CredentialGroupProof calldata proof) external;
+    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
+    function verifyProof(uint256 context_, CredentialGroupProof calldata proof) external view returns (bool);
+    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (bool);
+    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (uint256);
     function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
     function appIsActive(uint256 appId_) external view returns (bool);
 }

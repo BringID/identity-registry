@@ -3,7 +3,7 @@
 // Validate a Semaphore proof on-chain via the CredentialRegistry.
 //
 // Generates a Semaphore ZK proof for a previously registered credential and
-// calls validateProof() on-chain. Uses secretBase + appId to derive the
+// calls submitProof() on-chain. Uses secretBase + appId to derive the
 // Semaphore identity and generates a proof against the per-app Semaphore group.
 //
 // Required env vars:
@@ -79,7 +79,7 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const registryAbi = [
-    "function validateProof(uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
+    "function submitProof(uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
     "function credentialGroups(uint256) view returns (uint8 status)",
     "function appSemaphoreGroups(uint256, uint256) view returns (uint256)",
     "function appSemaphoreGroupCreated(uint256, uint256) view returns (bool)",
@@ -223,9 +223,9 @@ const proof = {
 
 // ── Send tx ─────────────────────────────────────────────────────────────────
 
-console.log("\nSending validateProof tx...");
+console.log("\nSending submitProof tx...");
 
-const tx = await registry.validateProof(context, proof);
+const tx = await registry.submitProof(context, proof);
 console.log("Tx hash:", tx.hash);
 
 const receipt = await tx.wait();

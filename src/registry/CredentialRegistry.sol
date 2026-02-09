@@ -14,7 +14,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 ///
 /// Users register credentials via verifier-signed attestations, then prove membership
 /// using Semaphore zero-knowledge proofs. Each credential group carries a score;
-/// the `score()` function aggregates scores across multiple credential proofs.
+/// the `submitProofs()` function validates proofs (consuming nullifiers) and aggregates scores.
 ///
 /// Per-app Semaphore groups: each (credentialGroup, app) pair gets its own Semaphore
 /// group, created lazily on first credential registration. Since Semaphore enforces
@@ -180,8 +180,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     //  Proof validation
     // ──────────────────────────────────────────────
 
-    /// @notice Validates a credential group proof via Semaphore ZK proof against
-    ///         the per-app Semaphore group.
+    /// @notice Submits a single credential group proof, consuming the nullifier.
     /// @dev The validation flow:
     ///      1. Check the credential group and app are active.
     ///      2. Verify scope binding: scope must equal keccak256(msg.sender, context_),
@@ -196,7 +195,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
-    function validateProof(uint256 context_, CredentialGroupProof memory proof_) public {
+    function submitProof(uint256 context_, CredentialGroupProof memory proof_) public {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "Credential group is inactive"
@@ -214,20 +213,65 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, proof_.semaphoreProof.nullifier);
     }
 
-    /// @notice Validates multiple credential group proofs and returns the sum of their scores.
-    /// @dev Iterates over each proof, accumulates the group's score, and calls validateProof()
-    ///      which performs full Semaphore verification. If any proof is invalid,
-    ///      the entire transaction reverts.
-    /// @param context_ Application-defined context value (see validateProof).
-    /// @param proofs_ Array of credential group proofs to validate.
+    /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
+    ///         the sum of their scores.
+    /// @dev Iterates over each proof, accumulates the group's score, and calls submitProof()
+    ///      which performs full Semaphore verification and consumes nullifiers. If any proof
+    ///      is invalid, the entire transaction reverts.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to submit.
     /// @return _score The total score across all validated credential groups.
-    function score(uint256 context_, CredentialGroupProof[] calldata proofs_) public returns (uint256 _score) {
+    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public returns (uint256 _score) {
         _score = 0;
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
-            validateProof(context_, _proof);
+            submitProof(context_, _proof);
+        }
+    }
+
+    /// @notice Verifies a credential group proof without consuming the nullifier.
+    /// @dev Uses Semaphore's view-only verifyProof() instead of its state-changing validateProof(),
+    ///      so the proof can still be submitted later. Useful for off-chain checks
+    ///      or UI validation before submitting a transaction.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proof_ The credential group proof to verify.
+    /// @return True if the proof is valid.
+    function verifyProof(uint256 context_, CredentialGroupProof memory proof_) public view returns (bool) {
+        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) return false;
+        if (apps[proof_.appId].status != AppStatus.ACTIVE) return false;
+        if (proof_.semaphoreProof.scope != uint256(keccak256(abi.encode(msg.sender, context_)))) return false;
+        if (!appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId]) return false;
+
+        uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
+        return SEMAPHORE.verifyProof(semaphoreGroupId, proof_.semaphoreProof);
+    }
+
+    /// @notice Verifies multiple credential group proofs without consuming nullifiers.
+    /// @dev View-only counterpart to submitProofs(). Returns false if any proof is invalid.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to verify.
+    /// @return True if all proofs are valid.
+    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (bool) {
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            if (!verifyProof(context_, proofs_[i])) return false;
+        }
+        return true;
+    }
+
+    /// @notice Verifies multiple proofs and returns the aggregate score without consuming nullifiers.
+    /// @dev View-only counterpart to submitProofs(). Reverts if any proof is invalid.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to verify.
+    /// @return _score The total score across all verified credential groups.
+    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (uint256 _score) {
+        _score = 0;
+        CredentialGroupProof memory _proof;
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            _proof = proofs_[i];
+            require(verifyProof(context_, _proof), "Invalid proof");
+            _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
         }
     }
 
