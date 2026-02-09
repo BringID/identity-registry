@@ -89,10 +89,19 @@ Solidity libraries managed via git submodules (`lib/`) and npm (`node_modules/`)
 
 ### CI
 
-GitHub Actions (`.github/workflows/test.yml`): format check → build with sizes → test (`forge test -vvv`). Triggered on push, PR, and manual dispatch.
+GitHub Actions (`.github/workflows/test.yml`). Triggered on push, PR, and manual dispatch. Steps:
+
+1. **Install** — Foundry toolchain + `yarn install --frozen-lockfile` (for `@semaphore-protocol` and other npm deps)
+2. **Format check** — `forge fmt --check`
+3. **Build** — `forge build --sizes` (uses `ci` profile, `via_ir = false`)
+4. **Build (via-ir, src only)** — `FOUNDRY_PROFILE=default forge build --skip test --skip script` (uses default profile, `via_ir = true`). Compiles only `src/` contracts and their imports (lightweight Semaphore interfaces). Skips test/script to avoid compiling heavy Semaphore implementation (`Semaphore.sol`, `SemaphoreVerifier.sol`, `PoseidonT3`).
+5. **Upload artifacts** — Uploads via-ir compiled `CredentialRegistry.sol/` and `DefaultScorer.sol/` as GitHub Actions artifacts. Download with `gh run download <run-id> -n via-ir-contracts`.
+6. **Tests** — `forge test --ffi -vvv` (uses `ci` profile, `via_ir = false`)
 
 ### Foundry config (`foundry.toml`)
 
-- `via_ir = false` for development (faster builds). **Must set `via_ir = true` before deploying to production.** Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests, `_executeInitiateRecovery` in CredentialRegistry).
+- **`[profile.default]`**: `via_ir = true` — production-optimized. Used by CI via-ir build step and for deployment. Local `via_ir` compilation may OOM on machines with ≤16GB RAM.
+- **`[profile.ci]`**: `via_ir = false` — fast builds for formatting, size checks, and tests. CI sets `FOUNDRY_PROFILE=ci` globally.
 - Optimizer with 200 runs
 - Fuzz: 10 runs, 100 max rejections
+- Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests, `_executeInitiateRecovery` in CredentialRegistry).

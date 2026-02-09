@@ -20,6 +20,10 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Install Node.js dependencies
+        run: |
+          yarn install --frozen-lockfile
+
       - name: Show Forge version
         run: |
           forge --version
@@ -34,7 +38,20 @@ jobs:
           forge build --sizes
         id: build
 
+      - name: Run Forge build (via-ir, src only)
+        run: |
+          FOUNDRY_PROFILE=default forge build --skip test --skip script
+        id: build-via-ir
+
+      - name: Upload via-ir artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: via-ir-contracts
+          path: |
+            out/CredentialRegistry.sol/
+            out/DefaultScorer.sol/
+
       - name: Run Forge tests
         run: |
-          forge test -vvv
+          forge test --ffi -vvv
         id: test
