@@ -1,0 +1,67 @@
+name: Verify Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry_address:
+        description: "CredentialRegistry contract address"
+        required: true
+      semaphore_address:
+        description: "Semaphore contract address (constructor arg)"
+        required: true
+      trusted_verifier_address:
+        description: "Trusted verifier address (constructor arg)"
+        required: true
+      nullifier_verifier_address:
+        description: "NullifierVerifier contract address (constructor arg)"
+        required: true
+      chain_id:
+        description: "Chain ID"
+        required: true
+        default: "84532"
+
+jobs:
+  verify:
+    name: Verify on BaseScan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Node.js dependencies
+        run: |
+          yarn install --frozen-lockfile
+
+      - name: Build with via-ir
+        run: |
+          FOUNDRY_PROFILE=default forge build --skip test --skip script
+
+      - name: Verify CredentialRegistry
+        run: |
+          forge verify-contract \
+            ${{ inputs.registry_address }} \
+            src/registry/CredentialRegistry.sol:CredentialRegistry \
+            --chain ${{ inputs.chain_id }} \
+            --constructor-args $(cast abi-encode "constructor(address,address,address)" "${{ inputs.semaphore_address }}" "${{ inputs.trusted_verifier_address }}" "${{ inputs.nullifier_verifier_address }}") \
+            --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} \
+            --watch
+
+      - name: Get DefaultScorer address
+        id: scorer
+        run: |
+          SCORER=$(cast call ${{ inputs.registry_address }} "defaultScorer()(address)" --rpc-url ${{ inputs.chain_id == '84532' && 'https://sepolia.base.org' || format('https://mainnet.base.org') }})
+          echo "address=$SCORER" >> "$GITHUB_OUTPUT"
+          echo "DefaultScorer address: $SCORER"
+
+      - name: Verify DefaultScorer
+        run: |
+          forge verify-contract \
+            ${{ steps.scorer.outputs.address }} \
+            src/registry/DefaultScorer.sol:DefaultScorer \
+            --chain ${{ inputs.chain_id }} \
+            --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} \
+            --watch
