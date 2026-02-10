@@ -19,6 +19,7 @@ interface ICredentialRegistry {
     struct CredentialGroup {
         CredentialGroupStatus status;
         uint256 validityDuration; // seconds, 0 = no expiry
+        uint256 familyId; // 0 = standalone (no family constraint), >0 = family grouping
     }
 
     struct App {
@@ -40,6 +41,7 @@ interface ICredentialRegistry {
         bool expired; // true after removeExpiredCredential; cleared on renewal/recovery
         uint256 commitment; // Semaphore identity commitment (persists across expiry for nullifier continuity)
         uint256 expiresAt; // 0 = no expiry
+        uint256 credentialGroupId; // which credential group within the family
         RecoveryRequest pendingRecovery;
     }
 

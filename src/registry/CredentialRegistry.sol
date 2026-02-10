@@ -47,8 +47,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     mapping(uint256 credentialGroupId => mapping(uint256 appId => bool)) public appSemaphoreGroupCreated;
 
     /// @notice Per-credential state keyed by registration hash.
-    /// Key = keccak256(registry, credentialGroupId, credentialId, appId), which ensures
-    /// one credential per (credential group, app, credential identity) tuple.
+    /// For family groups (familyId > 0): key = keccak256(registry, familyId, 0, credentialId, appId)
+    /// — all groups in the same family share one slot, preventing double registration.
+    /// For standalone groups (familyId == 0): key = keccak256(registry, 0, credentialGroupId, credentialId, appId).
     /// The `commitment` field persists across expiry/removal for nullifier continuity.
     mapping(bytes32 registrationHash => CredentialRecord) public credentials;
 
@@ -147,6 +148,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
 
         cred.registered = true;
+        cred.credentialGroupId = attestation_.credentialGroupId;
         cred.commitment = attestation_.semaphoreIdentityCommitment;
         SEMAPHORE.addMember(semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
 
@@ -206,6 +208,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(cred.registered, "BID::not registered");
         require(attestation_.semaphoreIdentityCommitment == cred.commitment, "BID::commitment mismatch");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
+
+        require(attestation_.credentialGroupId == cred.credentialGroupId, "BID::group mismatch");
 
         // Re-add to Semaphore if credential was expired and removed
         if (cred.expired) {
@@ -344,14 +348,19 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param credentialGroupId_ The unique identifier for this credential group (must be > 0).
     /// @param validityDuration_ Duration in seconds for which credentials in this group remain valid
     ///        (0 = no expiry).
-    function createCredentialGroup(uint256 credentialGroupId_, uint256 validityDuration_) public onlyOwner {
+    /// @param familyId_ Family ID (0 = standalone, >0 = family grouping). Groups in the same family
+    ///        share a registration hash, so only one group per family can be active per credential per app.
+    function createCredentialGroup(uint256 credentialGroupId_, uint256 validityDuration_, uint256 familyId_)
+        public
+        onlyOwner
+    {
         require(credentialGroupId_ > 0, "BID::zero credential group ID");
         require(
             credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED,
             "BID::credential group exists"
         );
         CredentialGroup memory _credentialGroup =
-            CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration_);
+            CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration_, familyId_);
         credentialGroups[credentialGroupId_] = _credentialGroup;
         credentialGroupIds.push(credentialGroupId_);
         emit CredentialGroupCreated(credentialGroupId_, _credentialGroup);
@@ -371,6 +380,19 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         credentialGroups[credentialGroupId_].validityDuration = validityDuration_;
         emit CredentialGroupValidityDurationSet(credentialGroupId_, validityDuration_);
+    }
+
+    /// @notice Updates the family ID for an existing credential group.
+    /// @dev Only affects future registrations; existing registrations keep their original hash.
+    /// @param credentialGroupId_ The credential group ID to update.
+    /// @param familyId_ New family ID (0 = standalone, >0 = family).
+    function setCredentialGroupFamily(uint256 credentialGroupId_, uint256 familyId_) public onlyOwner {
+        require(
+            credentialGroups[credentialGroupId_].status != CredentialGroupStatus.UNDEFINED,
+            "BID::credential group not found"
+        );
+        credentialGroups[credentialGroupId_].familyId = familyId_;
+        emit CredentialGroupFamilySet(credentialGroupId_, familyId_);
     }
 
     /// @notice Updates the global attestation validity duration.
@@ -485,10 +507,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        bytes32 registrationHash = keccak256(abi.encode(address(this), credentialGroupId_, credentialId_, appId_));
+        uint256 familyId = credentialGroups[credentialGroupId_].familyId;
+        bytes32 registrationHash = _registrationHash(familyId, credentialGroupId_, credentialId_, appId_);
         CredentialRecord storage cred = credentials[registrationHash];
         require(cred.registered, "BID::not registered");
         require(!cred.expired, "BID::already expired");
+        require(credentialGroupId_ == cred.credentialGroupId, "BID::group mismatch");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
         require(cred.expiresAt > 0, "BID::no expiry set");
         require(block.timestamp >= cred.expiresAt, "BID::not yet expired");
@@ -561,6 +585,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "BID::recovery disabled");
 
+        // Allow same group (key recovery) or different group within the same family (group change).
+        // Both go through the recovery timelock to prevent double-spend with different nullifiers.
+        uint256 credFamilyId = credentialGroups[cred.credentialGroupId].familyId;
+        uint256 attestFamilyId = credentialGroups[attestation_.credentialGroupId].familyId;
+        require(
+            attestation_.credentialGroupId == cred.credentialGroupId
+                || (credFamilyId > 0 && credFamilyId == attestFamilyId),
+            "BID::group mismatch"
+        );
+
         _executeInitiateRecovery(attestation_, registrationHash, merkleProofSiblings_);
     }
 
@@ -574,8 +608,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         // Only remove from Semaphore if the credential hasn't been expired and removed.
         // After removeExpiredCredential, the commitment is already gone from Semaphore.
+        // Use cred.credentialGroupId (not attestation) for removal — the attestation may
+        // target a different group within the same family (group change).
         if (!cred.expired) {
-            uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
+            uint256 semaphoreGroupId = appSemaphoreGroups[cred.credentialGroupId][attestation_.appId];
             SEMAPHORE.removeMember(semaphoreGroupId, oldCommitment, merkleProofSiblings_);
         }
 
@@ -612,10 +648,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[request.appId].status == AppStatus.ACTIVE, "BID::app not active");
 
-        uint256 semaphoreGroupId = appSemaphoreGroups[request.credentialGroupId][request.appId];
+        // Use _ensureAppSemaphoreGroup because the target group may not have a
+        // Semaphore group yet (group change within a family to a never-used group).
+        uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(request.credentialGroupId, request.appId);
         SEMAPHORE.addMember(semaphoreGroupId, request.newCommitment);
         cred.expired = false;
         cred.commitment = request.newCommitment;
+        cred.credentialGroupId = request.credentialGroupId;
         delete cred.pendingRecovery;
 
         emit RecoveryExecuted(registrationHash_, request.newCommitment);
@@ -649,16 +688,29 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "BID::untrusted verifier");
 
-        registrationHash = keccak256(
-            abi.encode(
-                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
-            )
-        );
+        uint256 familyId = credentialGroups[attestation_.credentialGroupId].familyId;
+        registrationHash =
+            _registrationHash(familyId, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId);
     }
 
     // ──────────────────────────────────────────────
     //  Internal helpers
     // ──────────────────────────────────────────────
+
+    /// @dev Computes the registration hash. For family groups, uses familyId (shared across the
+    ///      family) to naturally prevent double registration. For standalone groups, uses credentialGroupId.
+    ///      The two-slot encoding (familyId, credentialGroupId) prevents collisions:
+    ///      family hashes always have slot2=0, standalone hashes always have slot1=0.
+    function _registrationHash(uint256 familyId_, uint256 credentialGroupId_, bytes32 credentialId_, uint256 appId_)
+        internal
+        view
+        returns (bytes32)
+    {
+        if (familyId_ > 0) {
+            return keccak256(abi.encode(address(this), familyId_, uint256(0), credentialId_, appId_));
+        }
+        return keccak256(abi.encode(address(this), uint256(0), credentialGroupId_, credentialId_, appId_));
+    }
 
     /// @dev Ensures a Semaphore group exists for the (credentialGroupId, appId) pair.
     ///      Creates one lazily if it doesn't exist yet.

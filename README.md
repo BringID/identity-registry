@@ -12,23 +12,23 @@ Privacy-preserving credential system built with Semaphore zero-knowledge proofs.
 
 ### Credential Groups
 
-| ID | Credential | Group | Default Score | Validity Duration |
-|----|------------|-------|---------------|-------------------|
-| 1 | Farcaster | Low | 2 | 30 days |
-| 2 | Farcaster | Medium | 5 | 60 days |
-| 3 | Farcaster | High | 10 | 90 days |
-| 4 | GitHub | Low | 2 | 30 days |
-| 5 | GitHub | Medium | 5 | 60 days |
-| 6 | GitHub | High | 10 | 90 days |
-| 7 | X (Twitter) | Low | 2 | 30 days |
-| 8 | X (Twitter) | Medium | 5 | 60 days |
-| 9 | X (Twitter) | High | 10 | 90 days |
-| 10 | zkPassport | — | 20 | 180 days |
-| 11 | Self | — | 20 | 180 days |
-| 12 | Uber Rides | — | 10 | 180 days |
-| 13 | Apple Subs | — | 10 | 180 days |
-| 14 | Binance KYC | — | 20 | 180 days |
-| 15 | OKX KYC | — | 20 | 180 days |
+| ID | Credential | Group | Family | Default Score | Validity Duration |
+|----|------------|-------|--------|---------------|-------------------|
+| 1 | Farcaster | Low | 1 | 2 | 30 days |
+| 2 | Farcaster | Medium | 1 | 5 | 60 days |
+| 3 | Farcaster | High | 1 | 10 | 90 days |
+| 4 | GitHub | Low | 2 | 2 | 30 days |
+| 5 | GitHub | Medium | 2 | 5 | 60 days |
+| 6 | GitHub | High | 2 | 10 | 90 days |
+| 7 | X (Twitter) | Low | 3 | 2 | 30 days |
+| 8 | X (Twitter) | Medium | 3 | 5 | 60 days |
+| 9 | X (Twitter) | High | 3 | 10 | 90 days |
+| 10 | zkPassport | — | — | 20 | 180 days |
+| 11 | Self | — | — | 20 | 180 days |
+| 12 | Uber Rides | — | — | 10 | 180 days |
+| 13 | Apple Subs | — | — | 10 | 180 days |
+| 14 | Binance KYC | — | — | 20 | 180 days |
+| 15 | OKX KYC | — | — | 20 | 180 days |
 
 ## Usage
 

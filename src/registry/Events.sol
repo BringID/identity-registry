@@ -49,4 +49,5 @@ event CredentialExpired(
     uint256 indexed credentialGroupId, uint256 indexed appId, bytes32 credentialId, bytes32 registrationHash
 );
 event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
+event CredentialGroupFamilySet(uint256 indexed credentialGroupId, uint256 familyId);
 event AttestationValidityDurationSet(uint256 duration);
