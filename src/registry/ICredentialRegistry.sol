@@ -37,6 +37,7 @@ interface ICredentialRegistry {
 
     struct CredentialRecord {
         bool registered;
+        bool expired; // true after removeExpiredCredential; cleared on renewal/recovery
         uint256 commitment; // Semaphore identity commitment (persists across expiry for nullifier continuity)
         uint256 expiresAt; // 0 = no expiry
         RecoveryRequest pendingRecovery;

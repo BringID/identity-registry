@@ -516,7 +516,7 @@ contract CredentialRegistryTest is Test {
 
         registry.registerCredential(message, v, r, s);
 
-        vm.expectRevert("Credential already registered");
+        vm.expectRevert("Use renewCredential");
         registry.registerCredential(message, v, r, s);
     }
 
@@ -539,7 +539,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
         (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
 
-        vm.expectRevert("Credential already registered");
+        vm.expectRevert("Use renewCredential");
         registry.registerCredential(message2, v2, r2, s2);
     }
 
@@ -918,7 +918,7 @@ contract CredentialRegistryTest is Test {
 
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
 
-        (,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        (,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
         assertEq(req.credentialGroupId, credentialGroupId);
         assertEq(req.appId, DEFAULT_APP_ID);
         assertEq(req.newCommitment, newCommitment);
@@ -946,7 +946,7 @@ contract CredentialRegistryTest is Test {
 
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-        (,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        (,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
         assertEq(req.newCommitment, newCommitment);
     }
 
@@ -1025,7 +1025,8 @@ contract CredentialRegistryTest is Test {
 
         registry.executeRecovery(registrationHash);
 
-        (, uint256 commitment,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        (,, uint256 commitment,, ICredentialRegistry.RecoveryRequest memory req) =
+            registry.credentials(registrationHash);
         assertEq(commitment, newCommitment);
         assertEq(req.executeAfter, 0);
     }
@@ -1092,7 +1093,7 @@ contract CredentialRegistryTest is Test {
 
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-        (,, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (,,, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertEq(expiresAt, block.timestamp + validityDuration);
     }
 
@@ -1107,7 +1108,7 @@ contract CredentialRegistryTest is Test {
 
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-        (,, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (,,, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertEq(expiresAt, 0);
     }
 
@@ -1134,11 +1135,11 @@ contract CredentialRegistryTest is Test {
 
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
-        // Verify state is cleared (except commitment which persists for nullifier continuity)
-        (bool registered, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
-        assertFalse(registered);
+        // Verify expired flag is set (registered and commitment persist for nullifier continuity)
+        (bool registered, bool expired, uint256 storedCommitment,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertTrue(expired);
         assertEq(storedCommitment, commitment);
-        assertEq(expiresAt, 0);
     }
 
     function testRemoveExpiredCredentialTooEarly() public {
@@ -1207,7 +1208,7 @@ contract CredentialRegistryTest is Test {
         // Renew with the same commitment succeeds
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
-        (bool registered, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertTrue(registered);
         assertEq(storedCommitment, commitment);
         assertEq(expiresAt, block.timestamp + validityDuration);
@@ -1259,7 +1260,7 @@ contract CredentialRegistryTest is Test {
         // Combined with testRenewAfterExpiryRequiresSameCommitment (which verifies
         // that registeredCommitments survives expiry and blocks different commitments),
         // this ensures renewal after recovery+expiry must use the recovered commitment.
-        (, uint256 storedCommitment,,) = registry.credentials(registrationHash);
+        (,, uint256 storedCommitment,,) = registry.credentials(registrationHash);
         assertEq(storedCommitment, newCommitment);
     }
 
@@ -1286,7 +1287,7 @@ contract CredentialRegistryTest is Test {
 
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-        (,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        (,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
         assertEq(req.newCommitment, newCommitment);
     }
 
@@ -1310,17 +1311,18 @@ contract CredentialRegistryTest is Test {
         uint256[] memory siblings = new uint256[](0);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
-        // registered is false, but commitment persists
+        // expired is true, but registered and commitment persist
         {
-            (bool registered,,,) = registry.credentials(registrationHash);
-            assertFalse(registered);
+            (bool registered, bool expired,,,) = registry.credentials(registrationHash);
+            assertTrue(registered);
+            assertTrue(expired);
         }
 
         // Recovery succeeds — skips Semaphore removal (already removed)
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
 
         {
-            (,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+            (,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
             assertEq(req.newCommitment, newCommitment);
         }
 
@@ -1328,11 +1330,11 @@ contract CredentialRegistryTest is Test {
         vm.warp(block.timestamp + 1 days);
         registry.executeRecovery(registrationHash);
 
-        // Credential is re-registered with new commitment; expiry stays cleared (was removed)
-        (bool registered, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
+        // Credential is recovered with new commitment; expired flag cleared
+        (bool registered, bool expired, uint256 storedCommitment,,) = registry.credentials(registrationHash);
         assertTrue(registered);
+        assertFalse(expired);
         assertEq(storedCommitment, newCommitment);
-        assertEq(expiresAt, 0);
     }
 
     function testRemoveExpiredCredentialAfterRecoveryInitiated() public {
@@ -1381,7 +1383,7 @@ contract CredentialRegistryTest is Test {
 
         // executeRecovery still succeeds — it doesn't check expiry
         registry.executeRecovery(registrationHash);
-        (bool registered, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertEq(storedCommitment, newCommitment);
         assertTrue(registered);
 
@@ -1429,12 +1431,12 @@ contract CredentialRegistryTest is Test {
         uint256[] memory siblings = new uint256[](0);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
-        // registered is cleared but commitment persists
-        (bool registered, uint256 storedCommitment, uint256 expiresAt, ICredentialRegistry.RecoveryRequest memory req) =
+        // expired is set but registered and commitment persist
+        (bool registered, bool expired, uint256 storedCommitment,, ICredentialRegistry.RecoveryRequest memory req) =
             registry.credentials(registrationHash);
-        assertFalse(registered);
+        assertTrue(registered);
+        assertTrue(expired);
         assertEq(storedCommitment, commitment);
-        assertEq(expiresAt, 0);
         assertEq(req.executeAfter, 0);
     }
 
@@ -1468,7 +1470,7 @@ contract CredentialRegistryTest is Test {
 
         registry.renewCredential(att, v, r, s);
 
-        (bool registered, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertTrue(registered);
         assertEq(storedCommitment, commitment);
         assertEq(expiresAt, block.timestamp + validityDuration);
@@ -1499,7 +1501,7 @@ contract CredentialRegistryTest is Test {
 
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-        (bool registered,,,) = registry.credentials(registrationHash);
+        (bool registered,,,,) = registry.credentials(registrationHash);
         assertTrue(registered);
     }
 
@@ -1516,7 +1518,7 @@ contract CredentialRegistryTest is Test {
         bytes32 registrationHash =
             keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
 
-        (,, uint256 originalExpiry,) = registry.credentials(registrationHash);
+        (,,, uint256 originalExpiry,) = registry.credentials(registrationHash);
 
         // Warp to halfway through validity (not expired yet)
         vm.warp(block.timestamp + 15 days);
@@ -1524,7 +1526,7 @@ contract CredentialRegistryTest is Test {
         // Renew early — should reset expiry from current timestamp
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
-        (bool registered,, uint256 newExpiry,) = registry.credentials(registrationHash);
+        (bool registered,,, uint256 newExpiry,) = registry.credentials(registrationHash);
         assertEq(newExpiry, block.timestamp + validityDuration);
         assertTrue(newExpiry > originalExpiry);
         assertTrue(registered);
@@ -1546,14 +1548,14 @@ contract CredentialRegistryTest is Test {
         // Warp past expiry but don't remove
         vm.warp(block.timestamp + validityDuration);
         {
-            (bool registered,,,) = registry.credentials(registrationHash);
+            (bool registered,,,,) = registry.credentials(registrationHash);
             assertTrue(registered);
         }
 
         // Renew — credential is still in Semaphore, just reset expiry
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
-        (bool registered,, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (bool registered,,, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertTrue(registered);
         assertEq(expiresAt, block.timestamp + validityDuration);
     }
@@ -1637,7 +1639,7 @@ contract CredentialRegistryTest is Test {
 
         // Confirm expiry was set
         {
-            (,, uint256 expiresAt,) = registry.credentials(registrationHash);
+            (,,, uint256 expiresAt,) = registry.credentials(registrationHash);
             assertTrue(expiresAt > 0);
         }
 
@@ -1647,7 +1649,7 @@ contract CredentialRegistryTest is Test {
         // Renew — expiry should be cleared
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
-        (,, uint256 expiresAt,) = registry.credentials(registrationHash);
+        (,,, uint256 expiresAt,) = registry.credentials(registrationHash);
         assertEq(expiresAt, 0);
     }
 
