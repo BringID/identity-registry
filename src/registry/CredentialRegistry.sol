@@ -417,11 +417,23 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     /// @notice Suspends an active app, preventing new registrations and proof validations for it.
+    /// @dev Only callable by the app admin.
     /// @param appId_ The app ID to suspend.
-    function suspendApp(uint256 appId_) public onlyOwner {
+    function suspendApp(uint256 appId_) public {
+        require(apps[appId_].admin == msg.sender, "Not app admin");
         require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
         apps[appId_].status = AppStatus.SUSPENDED;
         emit AppSuspended(appId_);
+    }
+
+    /// @notice Reactivates a suspended app.
+    /// @dev Only callable by the app admin.
+    /// @param appId_ The app ID to activate.
+    function activateApp(uint256 appId_) public {
+        require(apps[appId_].admin == msg.sender, "Not app admin");
+        require(apps[appId_].status == AppStatus.SUSPENDED, "App is not suspended");
+        apps[appId_].status = AppStatus.ACTIVE;
+        emit AppActivated(appId_);
     }
 
     /// @notice Adds a trusted verifier that can sign attestations.

@@ -330,18 +330,48 @@ contract CredentialRegistryTest is Test {
         assertFalse(registry.appIsActive(appId));
     }
 
-    function testSuspendAppOnlyOwner() public {
+    function testSuspendAppNotAdmin() public {
         uint256 appId = registry.registerApp(0);
 
-        address notOwner = makeAddr("not-owner");
-        vm.prank(notOwner);
-        vm.expectRevert("Ownable: caller is not the owner");
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert("Not app admin");
         registry.suspendApp(appId);
     }
 
     function testSuspendAppNotActive() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
         vm.expectRevert("App is not active");
-        registry.suspendApp(999);
+        registry.suspendApp(appId);
+    }
+
+    function testActivateApp() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+        assertFalse(registry.appIsActive(appId));
+
+        vm.expectEmit(true, false, false, false);
+        emit AppActivated(appId);
+
+        registry.activateApp(appId);
+        assertTrue(registry.appIsActive(appId));
+    }
+
+    function testActivateAppNotAdmin() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert("Not app admin");
+        registry.activateApp(appId);
+    }
+
+    function testActivateAppNotSuspended() public {
+        uint256 appId = registry.registerApp(0);
+        vm.expectRevert("App is not suspended");
+        registry.activateApp(appId);
     }
 
     function testSetAppAdmin() public {
