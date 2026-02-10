@@ -74,6 +74,30 @@ make deploy-idcard        # IdCard contract to Base
 - **CredentialGroups.s.sol** — Batch-creates credential groups and sets scores on DefaultScorer.
 - **RegisterApps.s.sol** — Batch-registers apps (public, auto-increment).
 - **MockSignature.s.sol** — Generates test ECDSA signatures for attestations.
+- **register-credential.mjs** — E2e script: derives Semaphore identity from `--secret-base` + `--app-id`, signs attestation, calls `registerCredential()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS` env vars.
+- **verify-proof.mjs** — E2e script: generates Semaphore ZK proof and calls `submitProof()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS`, `SEMAPHORE_ADDRESS` env vars.
+
+### Local e2e testing
+
+```bash
+# 1. Start anvil
+anvil --port 8545
+
+# 2. Deploy (uses anvil account 0)
+PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  FOUNDRY_PROFILE=ci forge script script/DeployLocal.s.sol:DeployLocal \
+  --rpc-url http://127.0.0.1:8545 --broadcast
+
+# 3. Register credential (use REGISTRY_ADDRESS from deploy output)
+PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  REGISTRY_ADDRESS=<addr> \
+  node script/register-credential.mjs --credential-group-id 1 --app-id 1 --secret-base 42 --create-group
+
+# 4. Submit proof (use REGISTRY_ADDRESS and SEMAPHORE_ADDRESS from deploy output)
+PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  REGISTRY_ADDRESS=<addr> SEMAPHORE_ADDRESS=<addr> \
+  node script/verify-proof.mjs --credential-group-id 1 --app-id 1 --secret-base 42 --context 0
+```
 
 ### Test infrastructure (`test/`)
 
