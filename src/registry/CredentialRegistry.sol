@@ -46,22 +46,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Tracks whether a Semaphore group has been created for a (credentialGroup, app) pair.
     mapping(uint256 credentialGroupId => mapping(uint256 appId => bool)) public appSemaphoreGroupCreated;
 
-    /// @notice Tracks registered credentials to prevent duplicate registrations.
+    /// @notice Per-credential state keyed by registration hash.
     /// Key = keccak256(registry, credentialGroupId, credentialId, appId), which ensures
     /// one credential per (credential group, app, credential identity) tuple.
-    mapping(bytes32 => bool) public credentialRegistered;
-
-    /// @notice Maps registration hash to the Semaphore identity commitment that was registered.
-    /// Used during recovery to look up the old commitment for removal from the Semaphore group.
-    mapping(bytes32 registrationHash => uint256) public registeredCommitments;
-
-    /// @notice Maps registration hash to the timestamp at which the credential expires.
-    /// 0 means no expiry (credential lives forever).
-    mapping(bytes32 registrationHash => uint256) public credentialExpiresAt;
-
-    /// @notice Maps registration hash to a pending recovery request.
-    /// A non-zero executeAfter indicates an active pending recovery.
-    mapping(bytes32 registrationHash => RecoveryRequest) public pendingRecoveries;
+    /// The `commitment` field persists across expiry/removal for nullifier continuity.
+    mapping(bytes32 registrationHash => CredentialRecord) public credentials;
 
     /// @notice Array of all registered credential group IDs (for enumeration).
     uint256[] public credentialGroupIds;
@@ -159,8 +148,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
                 attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
             )
         );
-        require(!credentialRegistered[registrationHash], "Credential already registered");
-        require(registeredCommitments[registrationHash] == 0, "Use renewCredential");
+        CredentialRecord storage cred = credentials[registrationHash];
+        require(!cred.registered, "Credential already registered");
+        require(cred.commitment == 0, "Use renewCredential");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "Untrusted verifier");
@@ -168,15 +158,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         // Lazily create the per-app Semaphore group
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
 
-        credentialRegistered[registrationHash] = true;
-        registeredCommitments[registrationHash] = attestation_.semaphoreIdentityCommitment;
+        cred.registered = true;
+        cred.commitment = attestation_.semaphoreIdentityCommitment;
         SEMAPHORE.addMember(semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
 
         uint256 validityDuration = credentialGroups[attestation_.credentialGroupId].validityDuration;
         uint256 expiresAt;
         if (validityDuration > 0) {
             expiresAt = block.timestamp + validityDuration;
-            credentialExpiresAt[registrationHash] = expiresAt;
+            cred.expiresAt = expiresAt;
         }
 
         emit CredentialRegistered(
@@ -236,19 +226,20 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             )
         );
 
-        uint256 storedCommitment = registeredCommitments[registrationHash];
+        CredentialRecord storage cred = credentials[registrationHash];
+        uint256 storedCommitment = cred.commitment;
         require(storedCommitment != 0, "Credential never registered");
         require(attestation_.semaphoreIdentityCommitment == storedCommitment, "Must use same commitment");
-        require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery pending");
+        require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "Untrusted verifier");
 
         // Re-add to Semaphore if credential was removed
-        if (!credentialRegistered[registrationHash]) {
+        if (!cred.registered) {
             uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
             SEMAPHORE.addMember(semaphoreGroupId, storedCommitment);
-            credentialRegistered[registrationHash] = true;
+            cred.registered = true;
         }
 
         // Reset validity duration
@@ -256,9 +247,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         uint256 expiresAt;
         if (validityDuration > 0) {
             expiresAt = block.timestamp + validityDuration;
-            credentialExpiresAt[registrationHash] = expiresAt;
+            cred.expiresAt = expiresAt;
         } else {
-            delete credentialExpiresAt[registrationHash];
+            cred.expiresAt = 0;
         }
 
         emit CredentialRenewed(
@@ -503,20 +494,20 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         uint256[] calldata merkleProofSiblings_
     ) public {
         bytes32 registrationHash = keccak256(abi.encode(address(this), credentialGroupId_, credentialId_, appId_));
-        require(credentialRegistered[registrationHash], "Credential not registered");
-        require(credentialExpiresAt[registrationHash] > 0, "Credential has no expiry");
-        require(block.timestamp >= credentialExpiresAt[registrationHash], "Credential not yet expired");
+        CredentialRecord storage cred = credentials[registrationHash];
+        require(cred.registered, "Credential not registered");
+        require(cred.expiresAt > 0, "Credential has no expiry");
+        require(block.timestamp >= cred.expiresAt, "Credential not yet expired");
 
-        uint256 commitment = registeredCommitments[registrationHash];
         uint256 semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];
-        SEMAPHORE.removeMember(semaphoreGroupId, commitment, merkleProofSiblings_);
+        SEMAPHORE.removeMember(semaphoreGroupId, cred.commitment, merkleProofSiblings_);
 
-        delete credentialRegistered[registrationHash];
-        // NOTE: registeredCommitments is intentionally NOT deleted.
-        // This forces re-registration to use the same identity commitment,
+        cred.registered = false;
+        // NOTE: cred.commitment is intentionally NOT cleared.
+        // This forces renewal to use the same identity commitment,
         // preserving Semaphore nullifier continuity and preventing double-spend.
-        delete credentialExpiresAt[registrationHash];
-        delete pendingRecoveries[registrationHash];
+        cred.expiresAt = 0;
+        delete cred.pendingRecovery;
 
         emit CredentialExpired(credentialGroupId_, appId_, credentialId_, registrationHash);
     }
@@ -576,17 +567,19 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             )
         );
 
+        CredentialRecord storage cred = credentials[registrationHash];
+
         require(
             credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "Credential group is inactive"
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
-        // Allow recovery for expired+removed credentials (credentialRegistered is false
-        // but registeredCommitments persists). This covers the case where a user loses
+        // Allow recovery for expired+removed credentials (cred.registered is false
+        // but cred.commitment persists). This covers the case where a user loses
         // their Semaphore key after their credential expired and was removed.
-        require(registeredCommitments[registrationHash] != 0, "Credential never registered");
-        require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery already pending");
+        require(cred.commitment != 0, "Credential never registered");
+        require(cred.pendingRecovery.executeAfter == 0, "Recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "Recovery not enabled for app");
 
         {
@@ -602,17 +595,18 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes32 registrationHash,
         uint256[] calldata merkleProofSiblings_
     ) internal {
-        uint256 oldCommitment = registeredCommitments[registrationHash];
+        CredentialRecord storage cred = credentials[registrationHash];
+        uint256 oldCommitment = cred.commitment;
 
         // Only remove from Semaphore if the credential is still on-chain.
         // After removeExpiredCredential, the commitment is already gone from Semaphore.
-        if (credentialRegistered[registrationHash]) {
+        if (cred.registered) {
             uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
             SEMAPHORE.removeMember(semaphoreGroupId, oldCommitment, merkleProofSiblings_);
         }
 
         uint256 executeAfter = block.timestamp + apps[attestation_.appId].recoveryTimelock;
-        pendingRecoveries[registrationHash] = RecoveryRequest({
+        cred.pendingRecovery = RecoveryRequest({
             credentialGroupId: attestation_.credentialGroupId,
             appId: attestation_.appId,
             newCommitment: attestation_.semaphoreIdentityCommitment,
@@ -633,7 +627,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///      and clears the pending recovery. Can be called by anyone once the timelock expires.
     /// @param registrationHash_ The registration hash identifying the credential being recovered.
     function executeRecovery(bytes32 registrationHash_) public {
-        RecoveryRequest memory request = pendingRecoveries[registrationHash_];
+        CredentialRecord storage cred = credentials[registrationHash_];
+        RecoveryRequest memory request = cred.pendingRecovery;
         require(request.executeAfter != 0, "No pending recovery");
         require(block.timestamp >= request.executeAfter, "Recovery timelock not expired");
 
@@ -645,9 +640,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         uint256 semaphoreGroupId = appSemaphoreGroups[request.credentialGroupId][request.appId];
         SEMAPHORE.addMember(semaphoreGroupId, request.newCommitment);
-        credentialRegistered[registrationHash_] = true;
-        registeredCommitments[registrationHash_] = request.newCommitment;
-        delete pendingRecoveries[registrationHash_];
+        cred.registered = true;
+        cred.commitment = request.newCommitment;
+        delete cred.pendingRecovery;
 
         emit RecoveryExecuted(registrationHash_, request.newCommitment);
     }

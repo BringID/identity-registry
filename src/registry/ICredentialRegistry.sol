@@ -35,6 +35,13 @@ interface ICredentialRegistry {
         uint256 executeAfter;
     }
 
+    struct CredentialRecord {
+        bool registered;
+        uint256 commitment; // Semaphore identity commitment (persists across expiry for nullifier continuity)
+        uint256 expiresAt; // 0 = no expiry
+        RecoveryRequest pendingRecovery;
+    }
+
     struct CredentialGroupProof {
         uint256 credentialGroupId;
         uint256 appId;
