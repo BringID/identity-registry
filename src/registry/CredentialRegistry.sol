@@ -67,7 +67,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
     constructor(ISemaphore semaphore_, address trustedVerifier_) {
-        require(trustedVerifier_ != address(0), "Invalid trusted verifier address");
+        require(trustedVerifier_ != address(0), "BID::invalid trusted verifier");
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
 
@@ -109,7 +109,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param attestation_ The attestation containing credential details and Semaphore commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function registerCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "Bad signature length");
+        require(signature_.length == 65, "BID::invalid attestation sig length");
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -141,7 +141,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
-        require(!cred.registered, "Use renewCredential");
+        require(!cred.registered, "BID::already registered");
 
         // Lazily create the per-app Semaphore group
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
@@ -178,7 +178,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param attestation_ The attestation (commitment must match the stored one).
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function renewCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "Bad signature length");
+        require(signature_.length == 65, "BID::invalid attestation sig length");
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -203,9 +203,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
-        require(cred.registered, "Credential never registered");
-        require(attestation_.semaphoreIdentityCommitment == cred.commitment, "Must use same commitment");
-        require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
+        require(cred.registered, "BID::not registered");
+        require(attestation_.semaphoreIdentityCommitment == cred.commitment, "BID::commitment mismatch");
+        require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
 
         // Re-add to Semaphore if credential was expired and removed
         if (cred.expired) {
@@ -257,14 +257,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function submitProof(uint256 context_, CredentialGroupProof memory proof_) public {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
+            "BID::credential group inactive"
         );
-        require(apps[proof_.appId].status == AppStatus.ACTIVE, "App is not active");
-        require(proof_.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context_))), "Wrong scope");
+        require(apps[proof_.appId].status == AppStatus.ACTIVE, "BID::app not active");
         require(
-            appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId],
-            "No Semaphore group for this credential group and app"
+            proof_.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context_))), "BID::scope mismatch"
         );
+        require(appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId], "BID::no semaphore group");
 
         uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
         SEMAPHORE.validateProof(semaphoreGroupId, proof_.semaphoreProof);
@@ -329,7 +328,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
-            require(verifyProof(context_, _proof), "Invalid proof");
+            require(verifyProof(context_, _proof), "BID::invalid proof");
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
         }
     }
@@ -346,9 +345,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param validityDuration_ Duration in seconds for which credentials in this group remain valid
     ///        (0 = no expiry).
     function createCredentialGroup(uint256 credentialGroupId_, uint256 validityDuration_) public onlyOwner {
-        require(credentialGroupId_ > 0, "Credential group ID cannot equal zero");
+        require(credentialGroupId_ > 0, "BID::zero credential group ID");
         require(
-            credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED, "Credential group exists"
+            credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED,
+            "BID::credential group exists"
         );
         CredentialGroup memory _credentialGroup =
             CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration_);
@@ -367,7 +367,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     {
         require(
             credentialGroups[credentialGroupId_].status != CredentialGroupStatus.UNDEFINED,
-            "Credential group does not exist"
+            "BID::credential group not found"
         );
         credentialGroups[credentialGroupId_].validityDuration = validityDuration_;
         emit CredentialGroupValidityDurationSet(credentialGroupId_, validityDuration_);
@@ -376,7 +376,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Updates the global attestation validity duration.
     /// @param duration_ New duration in seconds (must be > 0).
     function setAttestationValidityDuration(uint256 duration_) public onlyOwner {
-        require(duration_ > 0, "Duration must be positive");
+        require(duration_ > 0, "BID::zero duration");
         attestationValidityDuration = duration_;
         emit AttestationValidityDurationSet(duration_);
     }
@@ -386,7 +386,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function suspendCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
         require(
             credentialGroups[credentialGroupId_].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is not active"
+            "BID::credential group not active"
         );
         credentialGroups[credentialGroupId_].status = CredentialGroupStatus.SUSPENDED;
     }
@@ -405,8 +405,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @dev Only callable by the app admin.
     /// @param appId_ The app ID to suspend.
     function suspendApp(uint256 appId_) public {
-        require(apps[appId_].admin == msg.sender, "Not app admin");
-        require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
         apps[appId_].status = AppStatus.SUSPENDED;
         emit AppSuspended(appId_);
     }
@@ -415,8 +415,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @dev Only callable by the app admin.
     /// @param appId_ The app ID to activate.
     function activateApp(uint256 appId_) public {
-        require(apps[appId_].admin == msg.sender, "Not app admin");
-        require(apps[appId_].status == AppStatus.SUSPENDED, "App is not suspended");
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(apps[appId_].status == AppStatus.SUSPENDED, "BID::app not suspended");
         apps[appId_].status = AppStatus.ACTIVE;
         emit AppActivated(appId_);
     }
@@ -424,7 +424,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Adds a trusted verifier that can sign attestations.
     /// @param verifier_ The verifier address to trust (must not be zero).
     function addTrustedVerifier(address verifier_) public onlyOwner {
-        require(verifier_ != address(0), "Invalid verifier address");
+        require(verifier_ != address(0), "BID::invalid verifier address");
         trustedVerifiers[verifier_] = true;
         emit TrustedVerifierAdded(verifier_);
     }
@@ -432,7 +432,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Removes a trusted verifier, revoking its ability to sign attestations.
     /// @param verifier_ The verifier address to remove (must be currently trusted).
     function removeTrustedVerifier(address verifier_) public onlyOwner {
-        require(trustedVerifiers[verifier_], "Verifier is not trusted");
+        require(trustedVerifiers[verifier_], "BID::verifier not trusted");
         trustedVerifiers[verifier_] = false;
         emit TrustedVerifierRemoved(verifier_);
     }
@@ -442,8 +442,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param appId_ The app ID to configure.
     /// @param recoveryTimelock_ The timelock duration in seconds (0 to disable recovery).
     function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public {
-        require(apps[appId_].admin == msg.sender, "Not app admin");
-        require(apps[appId_].status == AppStatus.ACTIVE, "App is not active");
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
         apps[appId_].recoveryTimelock = recoveryTimelock_;
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
     }
@@ -452,7 +452,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param appId_ The app ID.
     /// @param newAdmin_ The new admin address.
     function setAppAdmin(uint256 appId_, address newAdmin_) public {
-        require(apps[appId_].admin == msg.sender, "Not app admin");
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
         address oldAdmin = apps[appId_].admin;
         apps[appId_].admin = newAdmin_;
         emit AppAdminTransferred(appId_, oldAdmin, newAdmin_);
@@ -462,7 +462,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param appId_ The app ID.
     /// @param scorer_ The scorer contract address.
     function setAppScorer(uint256 appId_, address scorer_) public {
-        require(apps[appId_].admin == msg.sender, "Not app admin");
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
@@ -487,11 +487,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ) public {
         bytes32 registrationHash = keccak256(abi.encode(address(this), credentialGroupId_, credentialId_, appId_));
         CredentialRecord storage cred = credentials[registrationHash];
-        require(cred.registered, "Credential not registered");
-        require(!cred.expired, "Credential already expired");
-        require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
-        require(cred.expiresAt > 0, "Credential has no expiry");
-        require(block.timestamp >= cred.expiresAt, "Credential not yet expired");
+        require(cred.registered, "BID::not registered");
+        require(!cred.expired, "BID::already expired");
+        require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
+        require(cred.expiresAt > 0, "BID::no expiry set");
+        require(block.timestamp >= cred.expiresAt, "BID::not yet expired");
 
         uint256 semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];
         SEMAPHORE.removeMember(semaphoreGroupId, cred.commitment, merkleProofSiblings_);
@@ -521,7 +521,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes memory signature_,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        require(signature_.length == 65, "Bad signature length");
+        require(signature_.length == 65, "BID::invalid attestation sig length");
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -557,9 +557,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         (, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
 
-        require(cred.registered, "Credential never registered");
-        require(cred.pendingRecovery.executeAfter == 0, "Recovery already pending");
-        require(apps[attestation_.appId].recoveryTimelock > 0, "Recovery not enabled for app");
+        require(cred.registered, "BID::not registered");
+        require(cred.pendingRecovery.executeAfter == 0, "BID::recovery already pending");
+        require(apps[attestation_.appId].recoveryTimelock > 0, "BID::recovery disabled");
 
         _executeInitiateRecovery(attestation_, registrationHash, merkleProofSiblings_);
     }
@@ -603,14 +603,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function executeRecovery(bytes32 registrationHash_) public {
         CredentialRecord storage cred = credentials[registrationHash_];
         RecoveryRequest memory request = cred.pendingRecovery;
-        require(request.executeAfter != 0, "No pending recovery");
-        require(block.timestamp >= request.executeAfter, "Recovery timelock not expired");
+        require(request.executeAfter != 0, "BID::no pending recovery");
+        require(block.timestamp >= request.executeAfter, "BID::recovery timelock not expired");
 
         require(
             credentialGroups[request.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
+            "BID::credential group inactive"
         );
-        require(apps[request.appId].status == AppStatus.ACTIVE, "App is not active");
+        require(apps[request.appId].status == AppStatus.ACTIVE, "BID::app not active");
 
         uint256 semaphoreGroupId = appSemaphoreGroups[request.credentialGroupId][request.appId];
         SEMAPHORE.addMember(semaphoreGroupId, request.newCommitment);
@@ -640,14 +640,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     {
         require(
             credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
+            "BID::credential group inactive"
         );
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
-        require(attestation_.registry == address(this), "Wrong attestation message");
-        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "BID::app not active");
+        require(attestation_.registry == address(this), "BID::wrong registry address");
+        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
 
         (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-        require(trustedVerifiers[signer], "Untrusted verifier");
+        require(trustedVerifiers[signer], "BID::untrusted verifier");
 
         registrationHash = keccak256(
             abi.encode(
