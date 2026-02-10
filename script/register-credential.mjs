@@ -68,7 +68,7 @@ const wallet = new ethers.NonceManager(signer);
 
 // Minimal ABI — only the functions we call / read
 const registryAbi = [
-    "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment) attestation, uint8 v, bytes32 r, bytes32 s)",
+    "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment, uint256 issuedAt) attestation, uint8 v, bytes32 r, bytes32 s)",
     "function credentialGroups(uint256) view returns (uint8 status, uint256 validityDuration)",
     "function trustedVerifiers(address) view returns (bool)",
     "function createCredentialGroup(uint256 credentialGroupId, uint256 validityDuration)",
