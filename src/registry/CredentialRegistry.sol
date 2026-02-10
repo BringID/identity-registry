@@ -489,6 +489,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         CredentialRecord storage cred = credentials[registrationHash];
         require(cred.registered, "Credential not registered");
         require(!cred.expired, "Credential already expired");
+        require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
         require(cred.expiresAt > 0, "Credential has no expiry");
         require(block.timestamp >= cred.expiresAt, "Credential not yet expired");
 

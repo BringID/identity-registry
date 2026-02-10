@@ -1355,7 +1355,7 @@ contract CredentialRegistryTest is Test {
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
 
         // removeExpiredCredential tries to remove the same commitment again from Semaphore — reverts
-        vm.expectRevert();
+        vm.expectRevert("Recovery pending");
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
