@@ -52,6 +52,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// The `commitment` field persists across expiry/removal for nullifier continuity.
     mapping(bytes32 registrationHash => CredentialRecord) public credentials;
 
+    /// @notice Maximum age (in seconds) an attestation is accepted. Default 30 minutes.
+    uint256 public attestationValidityDuration = 30 minutes;
+
     /// @notice Array of all registered credential group IDs (for enumeration).
     uint256[] public credentialGroupIds;
 
@@ -142,6 +145,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
+        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
 
         bytes32 registrationHash = keccak256(
             abi.encode(
@@ -219,6 +223,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
+        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
 
         bytes32 registrationHash = keccak256(
             abi.encode(
@@ -401,6 +406,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit CredentialGroupValidityDurationSet(credentialGroupId_, validityDuration_);
     }
 
+    /// @notice Updates the global attestation validity duration.
+    /// @param duration_ New duration in seconds (must be > 0).
+    function setAttestationValidityDuration(uint256 duration_) public onlyOwner {
+        require(duration_ > 0, "Duration must be positive");
+        attestationValidityDuration = duration_;
+        emit AttestationValidityDurationSet(duration_);
+    }
+
     /// @notice Suspends an active credential group, preventing new registrations and proof validations.
     /// @param credentialGroupId_ The credential group ID to suspend.
     function suspendCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
@@ -575,6 +588,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
+        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
         // Allow recovery for expired+removed credentials (cred.registered is false
         // but cred.commitment persists). This covers the case where a user loses
         // their Semaphore key after their credential expired and was removed.

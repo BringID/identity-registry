@@ -54,6 +54,7 @@ interface ICredentialRegistry {
         bytes32 credentialId;
         uint256 appId;
         uint256 semaphoreIdentityCommitment;
+        uint256 issuedAt;
     }
 
     function submitProof(uint256 context_, CredentialGroupProof calldata proof) external;

@@ -14,7 +14,8 @@ contract Generate is Script {
             credentialGroupId: vm.envUint("CREDENTIAL_GROUP_ID"),
             credentialId: vm.envBytes32("CREDENTIAL_ID"),
             appId: vm.envUint("APP_ID"),
-            semaphoreIdentityCommitment: vm.envUint("COMMITMENT")
+            semaphoreIdentityCommitment: vm.envUint("COMMITMENT"),
+            issuedAt: block.timestamp
         });
 
         bytes32 message = keccak256(abi.encode(verifierMessage)).toEthSignedMessageHash();

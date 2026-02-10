@@ -150,24 +150,28 @@ if (!isTrusted) {
 
 // ── Build & sign attestation ────────────────────────────────────────────────
 
+const issuedAt = Math.floor(Date.now() / 1000);
+
 const attestation = {
     registry: REGISTRY_ADDRESS,
     credentialGroupId,
     credentialId,
     appId,
     semaphoreIdentityCommitment: commitment,
+    issuedAt,
 };
 
 // Encode the attestation the same way Solidity does:
 //   keccak256(abi.encode(attestation))
 const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["address", "uint256", "bytes32", "uint256", "uint256"],
+    ["address", "uint256", "bytes32", "uint256", "uint256", "uint256"],
     [
         attestation.registry,
         attestation.credentialGroupId,
         attestation.credentialId,
         attestation.appId,
         attestation.semaphoreIdentityCommitment,
+        attestation.issuedAt,
     ]
 );
 
@@ -189,6 +193,7 @@ const tx = await registry.registerCredential(
         attestation.credentialId,
         attestation.appId,
         attestation.semaphoreIdentityCommitment,
+        attestation.issuedAt,
     ],
     signature.v,
     signature.r,

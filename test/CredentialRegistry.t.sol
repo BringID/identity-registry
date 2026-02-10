@@ -12,6 +12,7 @@ import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
 import {Semaphore} from "semaphore-protocol/Semaphore.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
+import "../src/registry/Events.sol";
 
 contract MockScorer is IScorer {
     mapping(uint256 => uint256) public scores;
@@ -108,7 +109,8 @@ contract CredentialRegistryTest is Test {
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: appId,
-            semaphoreIdentityCommitment: commitment
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp
         });
     }
 
@@ -461,7 +463,8 @@ contract CredentialRegistryTest is Test {
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: DEFAULT_APP_ID,
-            semaphoreIdentityCommitment: commitment
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp
         });
 
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
@@ -1646,5 +1649,91 @@ contract CredentialRegistryTest is Test {
     function testSetCredentialGroupValidityDurationNonExistent() public {
         vm.expectRevert("Credential group does not exist");
         registry.setCredentialGroupValidityDuration(999, 7 days);
+    }
+
+    // --- Attestation validity duration tests ---
+
+    function testSetAttestationValidityDuration() public {
+        assertEq(registry.attestationValidityDuration(), 30 minutes);
+
+        vm.expectEmit(false, false, false, true);
+        emit AttestationValidityDurationSet(1 hours);
+
+        registry.setAttestationValidityDuration(1 hours);
+        assertEq(registry.attestationValidityDuration(), 1 hours);
+    }
+
+    function testSetAttestationValidityDurationOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setAttestationValidityDuration(1 hours);
+    }
+
+    function testSetAttestationValidityDurationZero() public {
+        vm.expectRevert("Duration must be positive");
+        registry.setAttestationValidityDuration(0);
+    }
+
+    function testRegisterCredentialExpiredAttestation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        // Warp past attestation validity (default 30 minutes)
+        vm.warp(block.timestamp + 31 minutes);
+
+        vm.expectRevert("Attestation expired");
+        registry.registerCredential(att, v, r, s);
+    }
+
+    function testRenewCredentialExpiredAttestation() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Create renewal attestation, then warp past its validity
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.warp(block.timestamp + 31 minutes);
+
+        vm.expectRevert("Attestation expired");
+        registry.renewCredential(att, v, r, s);
+    }
+
+    function testInitiateRecoveryExpiredAttestation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Create recovery attestation, then warp past its validity
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.warp(block.timestamp + 31 minutes);
+
+        uint256[] memory siblings = new uint256[](0);
+        vm.expectRevert("Attestation expired");
+        registry.initiateRecovery(att, v, r, s, siblings);
     }
 }
