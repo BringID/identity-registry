@@ -2,28 +2,29 @@
 
 // Validate a Semaphore proof on-chain via the CredentialRegistry.
 //
-// Generates a Semaphore ZK proof for a previously registered credential and
-// calls submitProof() on-chain. Uses secretBase + appId to derive the
-// Semaphore identity and generates a proof against the per-app Semaphore group.
+// Derives a deterministic Semaphore identity from the wallet private key +
+// appId + credentialGroupId, generates a Semaphore ZK proof for a previously
+// registered credential, and calls submitProof() on-chain.
+//
+// Identity derivation:
+//   seed = keccak256(abi.encodePacked(walletPrivateKey, appId, credentialGroupId))
+//   identity = new Identity(seed)
 //
 // Required env vars:
-//   PRIVATE_KEY            — wallet private key (hex, no 0x prefix)
+//   PRIVATE_KEY            — wallet private key (hex)
 //   REGISTRY_ADDRESS       — deployed CredentialRegistry address
 //   SEMAPHORE_ADDRESS      — deployed Semaphore contract address
 //   BASE_RPC_URL           — JSON-RPC endpoint (defaults to http://127.0.0.1:8545)
 //
 // Usage:
 //   node script/verify-proof.mjs \
-//     --secret-base <bigint> \
 //     --credential-group-id 1 \
 //     --app-id 1 \
 //     [--context 0]
 
 import { ethers } from "ethers";
-import { generateProof, Group } from "@semaphore-protocol/core";
+import { Identity, generateProof, Group } from "@semaphore-protocol/core";
 import { SemaphoreEthers } from "@semaphore-protocol/data";
-import { poseidon2 } from "poseidon-lite/poseidon2";
-import { mulPointEscalar, Base8, subOrder } from "@zk-kit/baby-jubjub";
 import { parseArgs } from "node:util";
 
 // ── CLI args ────────────────────────────────────────────────────────────────
@@ -32,7 +33,6 @@ const { values: args } = parseArgs({
     options: {
         "credential-group-id": { type: "string" },
         "app-id": { type: "string" },
-        "secret-base": { type: "string" },
         context: { type: "string" },
     },
 });
@@ -40,15 +40,6 @@ const { values: args } = parseArgs({
 const credentialGroupId = BigInt(args["credential-group-id"] ?? "1");
 const appId = BigInt(args["app-id"] ?? "1");
 const context = BigInt(args["context"] ?? "0");
-
-if (!args["secret-base"]) {
-    console.error(
-        "Usage: node script/verify-proof.mjs --secret-base <bigint> [--credential-group-id 1] [--app-id 1] [--context 0]"
-    );
-    process.exit(1);
-}
-
-const secretBase = BigInt(args["secret-base"]);
 
 // ── Env ─────────────────────────────────────────────────────────────────────
 
@@ -89,33 +80,21 @@ const registryAbi = [
 
 const registry = new ethers.Contract(REGISTRY_ADDRESS, registryAbi, wallet);
 
-// ── Reconstruct identity from secretBase + appId ────────────────────────────
+// ── Identity derivation ─────────────────────────────────────────────────────
 
-// identitySecret = poseidon2([secretBase, appId])
-const identitySecret = poseidon2([secretBase, appId]);
+// seed = keccak256(abi.encodePacked(walletPrivateKey, appId, credentialGroupId))
+const seed = ethers.keccak256(
+    ethers.solidityPacked(
+        ["bytes32", "uint256", "uint256"],
+        [PRIVATE_KEY, appId, credentialGroupId]
+    )
+);
+const identity = new Identity(seed);
 
-// The Semaphore v4 circuit requires secret < subOrder (BabyJubJub prime subgroup order).
-// Since Base8 generates a cyclic subgroup of order subOrder, the publicKey is the same
-// whether we use identitySecret or identitySecret % subOrder.
-const secretScalar = identitySecret % subOrder;
-
-// Derive Semaphore v4 public key: publicKey = Base8 * secretScalar
-const publicKey = mulPointEscalar(Base8, secretScalar);
-
-// commitment = poseidon2(publicKey) — matches Semaphore Identity.commitment
-const commitment = poseidon2(publicKey);
-
-// Build a fake Identity object that Semaphore's generateProof accepts.
-const identity = {
-    get secretScalar() { return secretScalar; },
-    get publicKey() { return publicKey; },
-    get commitment() { return commitment; },
-};
-
-console.log("Secret base:        ", secretBase.toString());
+console.log("Wallet:             ", wallet.address);
 console.log("App ID:             ", appId.toString());
-console.log("Identity secret:    ", identitySecret.toString());
-console.log("Identity commitment:", commitment.toString());
+console.log("Credential grp:     ", credentialGroupId.toString());
+console.log("Identity commitment:", identity.commitment.toString());
 
 // ── Pre-flight checks ───────────────────────────────────────────────────────
 

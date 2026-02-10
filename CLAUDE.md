@@ -52,6 +52,26 @@ make deploy-idcard        # IdCard contract to Base
 | DefaultScorer | `0x68a3CA701c6f7737395561E000B5cCF4ECa5185A` |
 
 Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
+Additional trusted verifier: `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
+
+### Registered Apps (Base Sepolia)
+
+| App ID | Admin | Recovery Timelock |
+|--------|-------|-------------------|
+| 1 | `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452` | 0 (disabled) |
+
+### Semaphore Identity Derivation
+
+Deterministic Semaphore identities are derived as:
+```
+seed = keccak256(abi.encodePacked(walletPrivateKey, appId, credentialGroupId))
+identity = new Identity(seed)
+```
+
+**Test identity** (deployer wallet, app 1, Uber Rides group 12):
+- Seed: `0x92d29499f05293703d2b5a4a1b258ce13dc4a291759adf968b5e2f8cb65f98eb`
+- Commitment: `5547623340946663008626844335290495993250135574086741156373042143070458722495`
+- Export (base64): `MHg5MmQyOTQ5OWYwNTI5MzcwM2QyYjVhNGExYjI1OGNlMTNkYzRhMjkxNzU5YWRmOTY4YjVlMmY4Y2I2NWY5OGVi`
 
 ### Credential Groups (Base Sepolia)
 
@@ -90,7 +110,7 @@ Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 - **Credential state**: per-credential state is stored in a single `credentials` mapping (`bytes32 registrationHash => CredentialRecord`). The registration hash uses a two-slot encoding to prevent collisions: for family groups (familyId > 0): `keccak256(registry, familyId, 0, credentialId, appId)` — all groups in the same family share one slot; for standalone groups (familyId == 0): `keccak256(registry, 0, credentialGroupId, credentialId, appId)`. The `credentialGroupId` is stored in `CredentialRecord` to track which specific group the credential belongs to.
 - **Family enforcement**: credential groups with the same `familyId` (> 0) share a registration hash, so a user can only hold one credential per family per app (e.g. cannot have both Farcaster Low and Farcaster High). Group changes within a family go through the recovery timelock (`initiateRecovery`/`executeRecovery`) to prevent double-spend with different Semaphore nullifiers. Standalone groups (familyId = 0) have no family constraint. Family IDs: 1 = Farcaster (groups 1–3), 2 = GitHub (groups 4–6), 3 = X/Twitter (groups 7–9), 0 = standalone (groups 10–15).
 - **Scope binding**: `submitProof` ties proofs to `msg.sender` + a context value, preventing proof replay across callers.
-- **App-specific identities**: each app derives a unique Semaphore commitment from the user's `secret_base + app_id`.
+- **App-specific identities**: each app derives a unique Semaphore commitment from `keccak256(abi.encodePacked(walletPrivateKey, appId, credentialGroupId))` fed into `new Identity(seed)`. This ensures per-app and per-credential-group isolation.
 - **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.
 - Semaphore groups are created on-chain via the Semaphore contract; the registry maps (credentialGroupId, appId) pairs to Semaphore group IDs via `appSemaphoreGroups`.
 - **Custom app scoring**: Scores are managed by separate Scorer contracts implementing `IScorer`. A `DefaultScorer` (owned by BringID) holds global scores. Each app points to a scorer — `DefaultScorer` by default, or a custom implementation set via `setAppScorer()`. `submitProofs()` and `getScore()` call `apps[appId].scorer.getScore(credentialGroupId)` for each proof.
@@ -111,8 +131,8 @@ Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 - **CredentialGroups.s.sol** — Batch-creates credential groups and sets scores on DefaultScorer.
 - **RegisterApps.s.sol** — Batch-registers apps (public, auto-increment).
 - **MockSignature.s.sol** — Generates test ECDSA signatures for attestations.
-- **register-credential.mjs** — E2e script: derives Semaphore identity from `--secret-base` + `--app-id`, signs attestation, calls `registerCredential()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS` env vars.
-- **verify-proof.mjs** — E2e script: generates Semaphore ZK proof and calls `submitProof()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS`, `SEMAPHORE_ADDRESS` env vars.
+- **register-credential.mjs** — E2e script: derives Semaphore identity from `keccak256(PRIVATE_KEY, appId, credentialGroupId)` via `new Identity(seed)`, signs attestation, calls `registerCredential()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS` env vars.
+- **verify-proof.mjs** — E2e script: derives Semaphore identity the same way, generates ZK proof, calls `submitProof()`. Requires `PRIVATE_KEY`, `REGISTRY_ADDRESS`, `SEMAPHORE_ADDRESS` env vars.
 
 ### Local e2e testing
 
@@ -128,12 +148,12 @@ PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 # 3. Register credential (use REGISTRY_ADDRESS from deploy output)
 PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
   REGISTRY_ADDRESS=<addr> \
-  node script/register-credential.mjs --credential-group-id 1 --app-id 1 --secret-base 42 --create-group
+  node script/register-credential.mjs --credential-group-id 1 --app-id 1 --create-group
 
 # 4. Submit proof (use REGISTRY_ADDRESS and SEMAPHORE_ADDRESS from deploy output)
 PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
   REGISTRY_ADDRESS=<addr> SEMAPHORE_ADDRESS=<addr> \
-  node script/verify-proof.mjs --credential-group-id 1 --app-id 1 --secret-base 42 --context 0
+  node script/verify-proof.mjs --credential-group-id 1 --app-id 1 --context 0
 ```
 
 ### Test infrastructure (`test/`)

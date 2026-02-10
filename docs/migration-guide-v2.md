@@ -82,6 +82,46 @@ The single `TLSNVerifier` address has been replaced with a `trustedVerifiers` ma
 
 New `getCredentialGroupIds()` view returns all registered credential group IDs.
 
+## Semaphore Identity Derivation
+
+Each user's Semaphore identity is derived deterministically from three inputs using the `@semaphore-protocol/core` `Identity` class:
+
+```
+seed = keccak256(abi.encodePacked(walletPrivateKey, appId, credentialGroupId))
+identity = new Identity(seed)
+commitment = identity.commitment
+```
+
+| Input | Type | Description |
+|---|---|---|
+| `walletPrivateKey` | `bytes32` | The user's wallet private key (or any secret known only to the user) |
+| `appId` | `uint256` | The app the credential is registered for |
+| `credentialGroupId` | `uint256` | The credential group (e.g. 12 for Uber Rides) |
+
+**Key properties:**
+- **Deterministic** — the same inputs always produce the same identity and commitment.
+- **Per-app isolation** — different `appId` values produce different identities, so Semaphore nullifiers cannot be correlated across apps.
+- **Per-credential-group isolation** — different credential groups produce different identities within the same app.
+- **Standard library** — uses the Semaphore `Identity` class directly, no manual BabyJubJub arithmetic.
+
+**JavaScript example:**
+
+```js
+import { Identity } from "@semaphore-protocol/core";
+import { ethers } from "ethers";
+
+const seed = ethers.keccak256(
+    ethers.solidityPacked(
+        ["bytes32", "uint256", "uint256"],
+        [walletPrivateKey, appId, credentialGroupId]
+    )
+);
+const identity = new Identity(seed);
+// identity.commitment → uint256 to use in attestations and Semaphore groups
+```
+
+> **Note:** The `walletPrivateKey` never leaves the client. Only the `commitment` (a hash of the derived public key) is sent to the verifier and stored on-chain.
+
 ## ABI Breaking Changes
 
 ### Struct changes
