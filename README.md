@@ -12,23 +12,23 @@ Privacy-preserving credential system built with Semaphore zero-knowledge proofs.
 
 ### Credential Groups
 
-| ID | Credential | Group | Default Score |
-|----|------------|-------|---------------|
-| 1 | Farcaster | Low | 2 |
-| 2 | Farcaster | Medium | 5 |
-| 3 | Farcaster | High | 10 |
-| 4 | GitHub | Low | 2 |
-| 5 | GitHub | Medium | 5 |
-| 6 | GitHub | High | 10 |
-| 7 | X (Twitter) | Low | 2 |
-| 8 | X (Twitter) | Medium | 5 |
-| 9 | X (Twitter) | High | 10 |
-| 10 | zkPassport | — | 20 |
-| 11 | Self | — | 20 |
-| 12 | Uber Rides | — | 10 |
-| 13 | Apple Subs | — | 10 |
-| 14 | Binance KYC | — | 20 |
-| 15 | OKX KYC | — | 20 |
+| ID | Credential | Group | Default Score | Validity Duration |
+|----|------------|-------|---------------|-------------------|
+| 1 | Farcaster | Low | 2 | No expiry |
+| 2 | Farcaster | Medium | 5 | No expiry |
+| 3 | Farcaster | High | 10 | No expiry |
+| 4 | GitHub | Low | 2 | No expiry |
+| 5 | GitHub | Medium | 5 | No expiry |
+| 6 | GitHub | High | 10 | No expiry |
+| 7 | X (Twitter) | Low | 2 | No expiry |
+| 8 | X (Twitter) | Medium | 5 | No expiry |
+| 9 | X (Twitter) | High | 10 | No expiry |
+| 10 | zkPassport | — | 20 | No expiry |
+| 11 | Self | — | 20 | No expiry |
+| 12 | Uber Rides | — | 10 | No expiry |
+| 13 | Apple Subs | — | 10 | No expiry |
+| 14 | Binance KYC | — | 20 | No expiry |
+| 15 | OKX KYC | — | 20 | No expiry |
 
 ## Usage
 
