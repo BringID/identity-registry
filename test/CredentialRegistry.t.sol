@@ -909,7 +909,7 @@ contract CredentialRegistryTest is Test {
 
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("Credential not registered");
+        vm.expectRevert("Credential never registered");
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
     }
 
@@ -1206,6 +1206,175 @@ contract CredentialRegistryTest is Test {
         // that registeredCommitments survives expiry and blocks different commitments),
         // this ensures re-registration after recovery+expiry must use the recovered commitment.
         assertEq(registry.registeredCommitments(registrationHash), newCommitment);
+    }
+
+    // --- Expiry + Recovery interaction edge cases ---
+
+    function testInitiateRecoveryOnExpiredButNotRemovedCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Warp past expiry but don't call removeExpiredCredential
+        vm.warp(block.timestamp + validityDuration);
+
+        // initiateRecovery still succeeds — credentialRegistered is still true
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (,, uint256 reqNewCommitment,) = registry.pendingRecoveries(registrationHash);
+        assertEq(reqNewCommitment, newCommitment);
+    }
+
+    function testInitiateRecoveryOnExpiredAndRemovedCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Expire and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // credentialRegistered is false, but registeredCommitments persists
+        assertFalse(registry.credentialRegistered(registrationHash));
+
+        // Recovery succeeds — skips Semaphore removal (already removed)
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        (,, uint256 reqNewCommitment,) = registry.pendingRecoveries(registrationHash);
+        assertEq(reqNewCommitment, newCommitment);
+
+        // Execute recovery after timelock — re-registers the credential
+        vm.warp(block.timestamp + 1 days);
+        registry.executeRecovery(registrationHash);
+
+        // Credential is re-registered with new commitment; expiry stays cleared (was removed)
+        assertTrue(registry.credentialRegistered(registrationHash));
+        assertEq(registry.registeredCommitments(registrationHash), newCommitment);
+        assertEq(registry.credentialExpiresAt(registrationHash), 0);
+    }
+
+    function testRemoveExpiredCredentialAfterRecoveryInitiated() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Warp past expiry, then initiate recovery (removes commitment from Semaphore)
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // removeExpiredCredential tries to remove the same commitment again from Semaphore — reverts
+        vm.expectRevert();
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testExecuteRecoveryAfterExpiry() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Initiate recovery before expiry
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // Warp past both recovery timelock AND credential expiry
+        vm.warp(block.timestamp + validityDuration);
+
+        // executeRecovery still succeeds — it doesn't check expiry
+        registry.executeRecovery(registrationHash);
+        assertEq(registry.registeredCommitments(registrationHash), newCommitment);
+        assertTrue(registry.credentialRegistered(registrationHash));
+
+        // Recovery does NOT reset expiry — credential is still expired
+        assertTrue(block.timestamp >= registry.credentialExpiresAt(registrationHash));
+    }
+
+    function testDoubleRecoveryOnExpiredCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Warp past expiry, initiate recovery
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
+
+        // Cannot initiate a second recovery while one is pending
+        vm.expectRevert("Recovery already pending");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
+    }
+
+    function testExpiredCredentialPreservesCommitmentForReRegistration() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(11111);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Expire and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // credentialRegistered is cleared but registeredCommitments persists
+        assertFalse(registry.credentialRegistered(registrationHash));
+        assertEq(registry.registeredCommitments(registrationHash), commitment);
+        assertEq(registry.credentialExpiresAt(registrationHash), 0);
+
+        // pendingRecoveries is cleared
+        (,,, uint256 reqExecuteAfter) = registry.pendingRecoveries(registrationHash);
+        assertEq(reqExecuteAfter, 0);
     }
 
     function testSetCredentialGroupValidityDuration() public {

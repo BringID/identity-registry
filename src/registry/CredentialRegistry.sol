@@ -503,7 +503,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
         require(attestation_.registry == address(this), "Wrong attestation message");
-        require(credentialRegistered[registrationHash], "Credential not registered");
+        // Allow recovery for expired+removed credentials (credentialRegistered is false
+        // but registeredCommitments persists). This covers the case where a user loses
+        // their Semaphore key after their credential expired and was removed.
+        require(registeredCommitments[registrationHash] != 0, "Credential never registered");
         require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "Recovery not enabled for app");
 
@@ -521,8 +524,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         uint256[] calldata merkleProofSiblings_
     ) internal {
         uint256 oldCommitment = registeredCommitments[registrationHash];
-        uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
-        SEMAPHORE.removeMember(semaphoreGroupId, oldCommitment, merkleProofSiblings_);
+
+        // Only remove from Semaphore if the credential is still on-chain.
+        // After removeExpiredCredential, the commitment is already gone from Semaphore.
+        if (credentialRegistered[registrationHash]) {
+            uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
+            SEMAPHORE.removeMember(semaphoreGroupId, oldCommitment, merkleProofSiblings_);
+        }
 
         uint256 executeAfter = block.timestamp + apps[attestation_.appId].recoveryTimelock;
         pendingRecoveries[registrationHash] = RecoveryRequest({
@@ -558,6 +566,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         uint256 semaphoreGroupId = appSemaphoreGroups[request.credentialGroupId][request.appId];
         SEMAPHORE.addMember(semaphoreGroupId, request.newCommitment);
+        credentialRegistered[registrationHash_] = true;
         registeredCommitments[registrationHash_] = request.newCommitment;
         delete pendingRecoveries[registrationHash_];
 
