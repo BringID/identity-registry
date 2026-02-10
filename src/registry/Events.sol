@@ -33,6 +33,16 @@ event RecoveryInitiated(
 );
 event RecoveryExecuted(bytes32 indexed registrationHash, uint256 newCommitment);
 
+event CredentialRenewed(
+    uint256 indexed credentialGroupId,
+    uint256 indexed appId,
+    uint256 indexed commitment,
+    bytes32 credentialId,
+    bytes32 registrationHash,
+    address verifier,
+    uint256 expiresAt
+);
+
 event CredentialExpired(
     uint256 indexed credentialGroupId, uint256 indexed appId, bytes32 credentialId, bytes32 registrationHash
 );

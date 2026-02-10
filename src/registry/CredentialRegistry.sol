@@ -160,13 +160,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             )
         );
         require(!credentialRegistered[registrationHash], "Credential already registered");
-
-        // Enforce same identity commitment on re-registration after expiry.
-        // registeredCommitments survives removeExpiredCredential to prevent double-spend.
-        uint256 previousCommitment = registeredCommitments[registrationHash];
-        if (previousCommitment != 0) {
-            require(attestation_.semaphoreIdentityCommitment == previousCommitment, "Must use same commitment");
-        }
+        require(registeredCommitments[registrationHash] == 0, "Use renewCredential");
 
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "Untrusted verifier");
@@ -190,6 +184,88 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             attestation_.credentialId,
             registrationHash,
             signer
+        );
+    }
+
+    // ──────────────────────────────────────────────
+    //  Credential renewal
+    // ──────────────────────────────────────────────
+
+    /// @notice Renew a previously-registered credential (bytes signature variant).
+    /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
+    ///      and delegates to the main renewCredential implementation.
+    /// @param attestation_ The attestation (commitment must match the stored one).
+    /// @param signature_ 65-byte ECDSA signature (r || s || v).
+    function renewCredential(Attestation memory attestation_, bytes memory signature_) public {
+        require(signature_.length == 65, "Bad signature length");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature_, 0x20))
+            s := mload(add(signature_, 0x40))
+            v := byte(0, mload(add(signature_, 0x60)))
+        }
+        renewCredential(attestation_, v, r, s);
+    }
+
+    /// @notice Renew a previously-registered credential.
+    /// @dev Re-activates an expired/removed credential or extends an active one.
+    ///      The identity commitment must remain the same (preserving nullifier continuity).
+    ///      If the credential was removed from the Semaphore group, it is re-added.
+    ///      The validity duration is always reset from the current block timestamp.
+    /// @param attestation_ The attestation struct. The semaphoreIdentityCommitment must match
+    ///        the stored commitment from the original registration.
+    /// @param v ECDSA recovery parameter.
+    /// @param r ECDSA signature component.
+    /// @param s ECDSA signature component.
+    function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+        require(
+            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
+        require(attestation_.registry == address(this), "Wrong attestation message");
+
+        bytes32 registrationHash = keccak256(
+            abi.encode(
+                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
+            )
+        );
+
+        uint256 storedCommitment = registeredCommitments[registrationHash];
+        require(storedCommitment != 0, "Credential never registered");
+        require(attestation_.semaphoreIdentityCommitment == storedCommitment, "Must use same commitment");
+        require(pendingRecoveries[registrationHash].executeAfter == 0, "Recovery pending");
+
+        (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+        require(trustedVerifiers[signer], "Untrusted verifier");
+
+        // Re-add to Semaphore if credential was removed
+        if (!credentialRegistered[registrationHash]) {
+            uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
+            SEMAPHORE.addMember(semaphoreGroupId, storedCommitment);
+            credentialRegistered[registrationHash] = true;
+        }
+
+        // Reset validity duration
+        uint256 validityDuration = credentialGroups[attestation_.credentialGroupId].validityDuration;
+        uint256 expiresAt;
+        if (validityDuration > 0) {
+            expiresAt = block.timestamp + validityDuration;
+            credentialExpiresAt[registrationHash] = expiresAt;
+        } else {
+            delete credentialExpiresAt[registrationHash];
+        }
+
+        emit CredentialRenewed(
+            attestation_.credentialGroupId,
+            attestation_.appId,
+            storedCommitment,
+            attestation_.credentialId,
+            registrationHash,
+            signer,
+            expiresAt
         );
     }
 
