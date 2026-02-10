@@ -7,32 +7,34 @@ This guide is for repos that integrate with the BringID CredentialRegistry contr
 | Contract | Address |
 |---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0xB0e2bf7d3D6536ad4b5851533bb120C9dbF5493b` |
-| DefaultScorer | `0x24EDA18506D9509F438c53496274A2fA4675888F` |
+| CredentialRegistry | `0x78Ce003ff79557A44eae862377a00F66df0557B2` |
+| DefaultScorer | `0x68a3CA701c6f7737395561E000B5cCF4ECa5185A` |
 
 Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 
 ## Credential Groups
 
-| ID | Credential | Group | Default Score | Validity Duration |
-|----|------------|-------|---------------|-------------------|
-| 1 | Farcaster | Low | 2 | No expiry |
-| 2 | Farcaster | Medium | 5 | No expiry |
-| 3 | Farcaster | High | 10 | No expiry |
-| 4 | GitHub | Low | 2 | No expiry |
-| 5 | GitHub | Medium | 5 | No expiry |
-| 6 | GitHub | High | 10 | No expiry |
-| 7 | X (Twitter) | Low | 2 | No expiry |
-| 8 | X (Twitter) | Medium | 5 | No expiry |
-| 9 | X (Twitter) | High | 10 | No expiry |
-| 10 | zkPassport | — | 20 | No expiry |
-| 11 | Self | — | 20 | No expiry |
-| 12 | Uber Rides | — | 10 | No expiry |
-| 13 | Apple Subs | — | 10 | No expiry |
-| 14 | Binance KYC | — | 20 | No expiry |
-| 15 | OKX KYC | — | 20 | No expiry |
+| ID | Credential | Group | Family | Default Score | Validity Duration |
+|----|------------|-------|--------|---------------|-------------------|
+| 1 | Farcaster | Low | 1 | 2 | 30 days |
+| 2 | Farcaster | Medium | 1 | 5 | 60 days |
+| 3 | Farcaster | High | 1 | 10 | 90 days |
+| 4 | GitHub | Low | 2 | 2 | 30 days |
+| 5 | GitHub | Medium | 2 | 5 | 60 days |
+| 6 | GitHub | High | 2 | 10 | 90 days |
+| 7 | X (Twitter) | Low | 3 | 2 | 30 days |
+| 8 | X (Twitter) | Medium | 3 | 5 | 60 days |
+| 9 | X (Twitter) | High | 3 | 10 | 90 days |
+| 10 | zkPassport | — | 0 | 20 | 180 days |
+| 11 | Self | — | 0 | 20 | 180 days |
+| 12 | Uber Rides | — | 0 | 10 | 180 days |
+| 13 | Apple Subs | — | 0 | 10 | 180 days |
+| 14 | Binance KYC | — | 0 | 20 | 180 days |
+| 15 | OKX KYC | — | 0 | 20 | 180 days |
 
-All groups have `validityDuration = 0` (no expiry). Scores are set on the `DefaultScorer` contract. Apps can override scoring by deploying a custom `IScorer` and calling `setAppScorer()`. To check whether an app uses a custom scorer, call `apps(appId)` — the returned `scorer` field will differ from `defaultScorer()` if a custom one is set.
+Scores are set on the `DefaultScorer` contract. Apps can override scoring by deploying a custom `IScorer` and calling `setAppScorer()`. To check whether an app uses a custom scorer, call `apps(appId)` — the returned `scorer` field will differ from `defaultScorer()` if a custom one is set.
+
+> **Family enforcement:** Groups in the same family (e.g. Farcaster Low/Medium/High) share a registration hash, so a user can only hold one credential per family per app. Group changes within a family go through the recovery timelock (`initiateRecovery`/`executeRecovery`). Standalone groups (family = 0) have no such constraint.
 
 ## New Features
 
@@ -57,20 +59,26 @@ Scores are no longer stored in `CredentialGroup`. A separate `DefaultScorer` con
 
 Users who lose their wallet can recover credentials per-app:
 1. Re-authenticate via any supported verification flow (zkTLS, OAuth, zkPassport, zkKYC, etc.) — the verifier re-derives the same `credentialId` and signs an attestation with a new commitment.
-2. `initiateRecovery()` — removes the old commitment immediately and queues the new one behind the app's `recoveryTimelock`.
-3. `executeRecovery()` — adds the new commitment after the timelock expires.
+2. `initiateRecovery()` — removes the old commitment immediately and queues the new one behind the app's `recoveryTimelock`. Also supports group changes within the same family (e.g. upgrading from Farcaster Low to High).
+3. `executeRecovery()` — adds the new commitment after the timelock expires and updates `credentialGroupId`.
 
 App admins configure the timelock at `registerApp()` time. Setting `recoveryTimelock` to `0` disables recovery.
 
 ### 5. Per-credential-group expiration
 
-Credential groups now carry a `validityDuration` (seconds, `0` = no expiry). On registration, `credentialExpiresAt` is stored. After expiry, anyone can call `removeExpiredCredential()` to evict the commitment from the Semaphore group and allow re-registration.
+Credential groups now carry a `validityDuration` (seconds, `0` = no expiry). On registration, `credentialExpiresAt` is stored. After expiry, anyone can call `removeExpiredCredential()` to evict the commitment from the Semaphore group and allow renewal.
 
-### 6. Multiple trusted verifiers
+### 6. Credential family enforcement
+
+Credential groups can be assigned to a family (e.g. Farcaster Low/Medium/High all belong to family 1). A user can only hold **one credential per family per app**. This is enforced via the registration hash: family groups use `keccak256(registry, familyId, 0, credentialId, appId)` while standalone groups use `keccak256(registry, 0, credentialGroupId, credentialId, appId)`.
+
+Group changes within a family (e.g. upgrading from Farcaster Low to High) go through the **recovery timelock** (`initiateRecovery`/`executeRecovery`), not renewal. This prevents double-spend — the timelock ensures no valid commitment exists during the transition. `renewCredential()` requires the same group as the original registration.
+
+### 7. Multiple trusted verifiers
 
 The single `TLSNVerifier` address has been replaced with a `trustedVerifiers` mapping supporting multiple signers (TLSN, OAuth, zkPassport, etc.) via `addTrustedVerifier()` / `removeTrustedVerifier()`.
 
-### 7. Credential group enumeration
+### 8. Credential group enumeration
 
 New `getCredentialGroupIds()` view returns all registered credential group IDs.
 
@@ -85,9 +93,10 @@ New `getCredentialGroupIds()` view returns all registered credential group IDs.
 -    uint256 semaphoreGroupId;
      CredentialGroupStatus status;
 +    uint256 validityDuration;
++    uint256 familyId;          // 0 = standalone, >0 = family grouping
  }
 ```
-Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via `appSemaphoreGroups[credentialGroupId][appId]`.
+Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via `appSemaphoreGroups[credentialGroupId][appId]`. `familyId` groups related credentials (e.g. Farcaster Low/Medium/High share family 1) — users can only hold one credential per family per app.
 
 **`Attestation`** — renamed and added fields:
 ```diff
@@ -115,7 +124,7 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 **New structs:**
 - `App` — `{ AppStatus status, uint256 recoveryTimelock, address admin, address scorer }`
 - `RecoveryRequest` — `{ uint256 credentialGroupId, uint256 appId, uint256 newCommitment, uint256 executeAfter }`
-- `CredentialRecord` — `{ bool registered, bool expired, uint256 commitment, uint256 expiresAt, RecoveryRequest pendingRecovery }`
+- `CredentialRecord` — `{ bool registered, bool expired, uint256 commitment, uint256 expiresAt, uint256 credentialGroupId, RecoveryRequest pendingRecovery }`
 
 ### Renamed / replaced functions
 
@@ -145,8 +154,9 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 | `removeExpiredCredential(credentialGroupId, credentialId, appId, siblings)` | write | Evict expired credential (blocked during pending recovery) |
 | `activateApp(appId)` | write | App admin reactivates a suspended app |
 | `setAttestationValidityDuration(duration)` | write | Owner-only, set max attestation age |
-| `createCredentialGroup(id, validityDuration)` | write | Owner-only, now takes `validityDuration` |
+| `createCredentialGroup(id, validityDuration, familyId)` | write | Owner-only, now takes `validityDuration` and `familyId` |
 | `setCredentialGroupValidityDuration(id, duration)` | write | Owner-only, update expiry for future registrations |
+| `setCredentialGroupFamily(id, familyId)` | write | Owner-only, update family assignment |
 | `getCredentialGroupIds()` | view | List all credential group IDs |
 | `appIsActive(appId)` | view | Check if app is active |
 
@@ -158,7 +168,7 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 | `ProofValidated(credentialGroupId)` | `ProofValidated(credentialGroupId, appId, nullifier)` |
 | `TLSNVerifierSet(verifier)` | `TrustedVerifierAdded(verifier)` / `TrustedVerifierRemoved(verifier)` |
 
-**New events:** `AppSemaphoreGroupCreated`, `AppRegistered`, `AppSuspended`, `AppActivated`, `AppScorerSet`, `AppAdminTransferred`, `AppRecoveryTimelockSet`, `RecoveryInitiated`, `RecoveryExecuted`, `CredentialRenewed`, `CredentialExpired`, `CredentialGroupValidityDurationSet`, `AttestationValidityDurationSet`.
+**New events:** `AppSemaphoreGroupCreated`, `AppRegistered`, `AppSuspended`, `AppActivated`, `AppScorerSet`, `AppAdminTransferred`, `AppRecoveryTimelockSet`, `RecoveryInitiated`, `RecoveryExecuted`, `CredentialRenewed`, `CredentialExpired`, `CredentialGroupValidityDurationSet`, `CredentialGroupFamilySet`, `AttestationValidityDurationSet`.
 
 ### New contracts
 
@@ -192,5 +202,8 @@ All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered
 - [ ] Replace `score()` with `submitProofs()` or `getScore()` (view)
 - [ ] Replace `credentialGroupScore()` with `DefaultScorer.getScore()`
 - [ ] Register your app via `registerApp(recoveryTimelock)` and use the returned `appId`
+- [ ] Account for `familyId` in `CredentialGroup` — groups in the same family share a registration hash
+- [ ] Account for `credentialGroupId` in `CredentialRecord` — tracks which group within the family
+- [ ] For group changes within a family, use `initiateRecovery`/`executeRecovery` (not `renewCredential`)
 - [ ] If listening to events, update to new event names and signatures
 - [ ] If matching on revert reason strings, update to `BID::` prefixed messages

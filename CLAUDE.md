@@ -48,8 +48,8 @@ make deploy-idcard        # IdCard contract to Base
 | Contract | Address |
 |---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0xB0e2bf7d3D6536ad4b5851533bb120C9dbF5493b` |
-| DefaultScorer | `0x24EDA18506D9509F438c53496274A2fA4675888F` |
+| CredentialRegistry | `0x78Ce003ff79557A44eae862377a00F66df0557B2` |
+| DefaultScorer | `0x68a3CA701c6f7737395561E000B5cCF4ECa5185A` |
 
 Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 
