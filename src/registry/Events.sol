@@ -11,7 +11,8 @@ event CredentialRegistered(
     uint256 indexed commitment,
     bytes32 credentialId,
     bytes32 registrationHash,
-    address verifier
+    address verifier,
+    uint256 expiresAt
 );
 event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
 

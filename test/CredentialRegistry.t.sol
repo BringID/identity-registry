@@ -49,7 +49,8 @@ contract CredentialRegistryTest is Test {
         uint256 indexed commitment,
         bytes32 credentialId,
         bytes32 registrationHash,
-        address verifier
+        address verifier,
+        uint256 expiresAt
     );
     event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
     event TrustedVerifierAdded(address indexed verifier);
@@ -395,7 +396,7 @@ contract CredentialRegistryTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
         vm.expectEmit(true, true, true, false);
-        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0));
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0), 0);
 
         registry.registerCredential(message, v, r, s);
     }
@@ -414,7 +415,7 @@ contract CredentialRegistryTest is Test {
         bytes memory signature = abi.encodePacked(r, s, v);
 
         vm.expectEmit(true, true, true, false);
-        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0));
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0), 0);
 
         registry.registerCredential(message, signature);
     }

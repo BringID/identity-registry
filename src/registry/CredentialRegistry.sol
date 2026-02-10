@@ -173,8 +173,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.addMember(semaphoreGroupId, attestation_.semaphoreIdentityCommitment);
 
         uint256 validityDuration = credentialGroups[attestation_.credentialGroupId].validityDuration;
+        uint256 expiresAt;
         if (validityDuration > 0) {
-            credentialExpiresAt[registrationHash] = block.timestamp + validityDuration;
+            expiresAt = block.timestamp + validityDuration;
+            credentialExpiresAt[registrationHash] = expiresAt;
         }
 
         emit CredentialRegistered(
@@ -183,7 +185,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             attestation_.semaphoreIdentityCommitment,
             attestation_.credentialId,
             registrationHash,
-            signer
+            signer,
+            expiresAt
         );
     }
 
