@@ -161,6 +161,13 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(!credentialRegistered[registrationHash], "Credential already registered");
 
+        // Enforce same identity commitment on re-registration after expiry.
+        // registeredCommitments survives removeExpiredCredential to prevent double-spend.
+        uint256 previousCommitment = registeredCommitments[registrationHash];
+        if (previousCommitment != 0) {
+            require(attestation_.semaphoreIdentityCommitment == previousCommitment, "Must use same commitment");
+        }
+
         (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "Untrusted verifier");
 
@@ -426,7 +433,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.removeMember(semaphoreGroupId, commitment, merkleProofSiblings_);
 
         delete credentialRegistered[registrationHash];
-        delete registeredCommitments[registrationHash];
+        // NOTE: registeredCommitments is intentionally NOT deleted.
+        // This forces re-registration to use the same identity commitment,
+        // preserving Semaphore nullifier continuity and preventing double-spend.
         delete credentialExpiresAt[registrationHash];
         delete pendingRecoveries[registrationHash];
 

@@ -1082,9 +1082,9 @@ contract CredentialRegistryTest is Test {
 
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
-        // Verify state is cleared
+        // Verify state is cleared (except registeredCommitments which persists for nullifier continuity)
         assertFalse(registry.credentialRegistered(registrationHash));
-        assertEq(registry.registeredCommitments(registrationHash), 0);
+        assertEq(registry.registeredCommitments(registrationHash), commitment);
         assertEq(registry.credentialExpiresAt(registrationHash), 0);
     }
 
@@ -1133,7 +1133,33 @@ contract CredentialRegistryTest is Test {
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
-    function testReRegisterAfterExpiry() public {
+    function testReRegisterAfterExpiryWithSameCommitment() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Re-register with the same commitment succeeds
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        assertTrue(registry.credentialRegistered(registrationHash));
+        assertEq(registry.registeredCommitments(registrationHash), commitment);
+        assertEq(registry.credentialExpiresAt(registrationHash), block.timestamp + validityDuration);
+    }
+
+    function testReRegisterAfterExpiryRequiresSameCommitment() public {
         uint256 credentialGroupId = 10;
         uint256 validityDuration = 30 days;
         registry.createCredentialGroup(credentialGroupId, validityDuration);
@@ -1144,20 +1170,42 @@ contract CredentialRegistryTest is Test {
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
 
-        bytes32 registrationHash =
-            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
-
         // Warp past expiry and remove
         vm.warp(block.timestamp + validityDuration);
         uint256[] memory siblings = new uint256[](0);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
-        // Re-register with a new commitment
+        // Re-register with a different commitment reverts
+        vm.expectRevert("Must use same commitment");
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
+    }
 
-        assertTrue(registry.credentialRegistered(registrationHash));
-        assertEq(registry.registeredCommitments(registrationHash), commitment2);
-        assertEq(registry.credentialExpiresAt(registrationHash), block.timestamp + validityDuration);
+    function testRecoveryUpdatesPersistedCommitment() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Recovery: replace oldCommitment with newCommitment
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+        vm.warp(block.timestamp + 1 days);
+        registry.executeRecovery(registrationHash);
+
+        // After recovery, registeredCommitments should point to the new commitment.
+        // Combined with testReRegisterAfterExpiryRequiresSameCommitment (which verifies
+        // that registeredCommitments survives expiry and blocks different commitments),
+        // this ensures re-registration after recovery+expiry must use the recovered commitment.
+        assertEq(registry.registeredCommitments(registrationHash), newCommitment);
     }
 
     function testSetCredentialGroupValidityDuration() public {

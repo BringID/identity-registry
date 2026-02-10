@@ -34,8 +34,7 @@ contract DeployCredentialGroups is Script {
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
-        CredentialRegistry registry =
-            CredentialRegistry(vm.envAddress("CREDENTIAL_REGISTRY_ADDRESS"));
+        CredentialRegistry registry = CredentialRegistry(vm.envAddress("CREDENTIAL_REGISTRY_ADDRESS"));
         DefaultScorer scorer = DefaultScorer(registry.defaultScorer());
 
         // --- credential group IDs, validity durations, and scores ---
@@ -43,32 +42,46 @@ contract DeployCredentialGroups is Script {
         uint256[] memory scores = new uint256[](15);
 
         // Farcaster Low / Medium / High
-        ids[0] = 1;  scores[0] = 2;
-        ids[1] = 2;  scores[1] = 5;
-        ids[2] = 3;  scores[2] = 10;
+        ids[0] = 1;
+        scores[0] = 2;
+        ids[1] = 2;
+        scores[1] = 5;
+        ids[2] = 3;
+        scores[2] = 10;
 
         // GitHub Low / Medium / High
-        ids[3] = 4;  scores[3] = 2;
-        ids[4] = 5;  scores[4] = 5;
-        ids[5] = 6;  scores[5] = 10;
+        ids[3] = 4;
+        scores[3] = 2;
+        ids[4] = 5;
+        scores[4] = 5;
+        ids[5] = 6;
+        scores[5] = 10;
 
         // X (Twitter) Low / Medium / High
-        ids[6] = 7;  scores[6] = 2;
-        ids[7] = 8;  scores[7] = 5;
-        ids[8] = 9;  scores[8] = 10;
+        ids[6] = 7;
+        scores[6] = 2;
+        ids[7] = 8;
+        scores[7] = 5;
+        ids[8] = 9;
+        scores[8] = 10;
 
         // Binary credentials
-        ids[9]  = 10; scores[9]  = 20; // zkPassport
-        ids[10] = 11; scores[10] = 20; // Self
-        ids[11] = 12; scores[11] = 10; // Uber Rides
-        ids[12] = 13; scores[12] = 10; // Apple Subs
-        ids[13] = 14; scores[13] = 20; // Binance KYC
-        ids[14] = 15; scores[14] = 20; // OKX KYC
+        ids[9] = 10; // zkPassport
+        scores[9] = 20;
+        ids[10] = 11; // Self
+        scores[10] = 20;
+        ids[11] = 12; // Uber Rides
+        scores[11] = 10;
+        ids[12] = 13; // Apple Subs
+        scores[12] = 10;
+        ids[13] = 14; // Binance KYC
+        scores[13] = 20;
+        ids[14] = 15; // OKX KYC
+        scores[14] = 20;
 
         // Create credential groups that don't already exist (validityDuration = 0 → no expiry)
         for (uint256 i = 0; i < ids.length; i++) {
-            (ICredentialRegistry.CredentialGroupStatus status,) =
-                registry.credentialGroups(ids[i]);
+            (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(ids[i]);
             if (status == ICredentialRegistry.CredentialGroupStatus.UNDEFINED) {
                 registry.createCredentialGroup(ids[i], 0);
             }
@@ -81,8 +94,7 @@ contract DeployCredentialGroups is Script {
 
         // --- verification logging ---
         for (uint256 i = 0; i < ids.length; i++) {
-            (ICredentialRegistry.CredentialGroupStatus status,) =
-                registry.credentialGroups(ids[i]);
+            (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(ids[i]);
             uint256 score = scorer.getScore(ids[i]);
             console.log("Group %d: status=%d, score=%d", ids[i], uint256(status), score);
         }
