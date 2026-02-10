@@ -13,7 +13,7 @@
 | **X (Twitter)** | Low | Account connected. Low follower count, minimal post history. |
 | **X (Twitter)** | Medium | Account with moderate followers, regular posting activity, and reasonable account age. |
 | **X (Twitter)** | High | Established account with a strong follower base, consistent activity, and significant account age. |
-| **ZKPASSPORT** | — | Prove passport verification via zero-knowledge proof. Binary credential. |
+| **zkPassport** | — | Prove passport verification via zero-knowledge proof. Binary credential. |
 | **Self** | — | Prove passport verification via Self protocol. Binary credential. |
 | **Uber Rides** | — | Prove at least 5 completed Uber trips. Binary credential. |
 | **Apple Subs** | — | Prove an active Apple subscription (e.g. iCloud, Apple Music, Apple One). Binary credential. |
@@ -33,7 +33,7 @@
 | X (Twitter) | Low | 2 |
 | X (Twitter) | Medium | 5 |
 | X (Twitter) | High | 10 |
-| ZKPASSPORT | — | 20 |
+| zkPassport | — | 20 |
 | Self | — | 20 |
 | Uber Rides | — | 10 |
 | Apple Subs | — | 10 |

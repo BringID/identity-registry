@@ -19,7 +19,7 @@ import {Script, console} from "forge-std/Script.sol";
 ///   7 | X (Twitter)       | Low    |   2
 ///   8 | X (Twitter)       | Medium |   5
 ///   9 | X (Twitter)       | High   |  10
-///  10 | ZKPASSPORT        | —      |  20
+///  10 | zkPassport        | —      |  20
 ///  11 | Self              | —      |  20
 ///  12 | Uber Rides        | —      |  10
 ///  13 | Apple Subs        | —      |  10
@@ -58,7 +58,7 @@ contract DeployCredentialGroups is Script {
         ids[8] = 9;  scores[8] = 10;
 
         // Binary credentials
-        ids[9]  = 10; scores[9]  = 20; // ZKPASSPORT
+        ids[9]  = 10; scores[9]  = 20; // zkPassport
         ids[10] = 11; scores[10] = 20; // Self
         ids[11] = 12; scores[11] = 10; // Uber Rides
         ids[12] = 13; scores[12] = 10; // Apple Subs

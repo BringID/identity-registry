@@ -66,7 +66,7 @@ Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 | 7 | X (Twitter) | Low | 2 |
 | 8 | X (Twitter) | Medium | 5 |
 | 9 | X (Twitter) | High | 10 |
-| 10 | ZKPASSPORT | — | 20 |
+| 10 | zkPassport | — | 20 |
 | 11 | Self | — | 20 |
 | 12 | Uber Rides | — | 10 |
 | 13 | Apple Subs | — | 10 |
