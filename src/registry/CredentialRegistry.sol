@@ -139,13 +139,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
-        require(
-            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
-        );
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
-        require(attestation_.registry == address(this), "Wrong attestation message");
-        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
+        address signer = verifyAttestation(attestation_, v, r, s);
 
         bytes32 registrationHash = keccak256(
             abi.encode(
@@ -155,9 +149,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         CredentialRecord storage cred = credentials[registrationHash];
         require(!cred.registered, "Credential already registered");
         require(cred.commitment == 0, "Use renewCredential");
-
-        (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-        require(trustedVerifiers[signer], "Untrusted verifier");
 
         // Lazily create the per-app Semaphore group
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
@@ -217,13 +208,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
-        require(
-            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
-        );
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
-        require(attestation_.registry == address(this), "Wrong attestation message");
-        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
+        address signer = verifyAttestation(attestation_, v, r, s);
 
         bytes32 registrationHash = keccak256(
             abi.encode(
@@ -236,9 +221,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(storedCommitment != 0, "Credential never registered");
         require(attestation_.semaphoreIdentityCommitment == storedCommitment, "Must use same commitment");
         require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
-
-        (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-        require(trustedVerifiers[signer], "Untrusted verifier");
 
         // Re-add to Semaphore if credential was removed
         if (!cred.registered) {
@@ -574,6 +556,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes32 s,
         uint256[] calldata merkleProofSiblings_
     ) public {
+        verifyAttestation(attestation_, v, r, s);
+
         bytes32 registrationHash = keccak256(
             abi.encode(
                 attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
@@ -582,24 +566,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         CredentialRecord storage cred = credentials[registrationHash];
 
-        require(
-            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "Credential group is inactive"
-        );
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
-        require(attestation_.registry == address(this), "Wrong attestation message");
-        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
         // Allow recovery for expired+removed credentials (cred.registered is false
         // but cred.commitment persists). This covers the case where a user loses
         // their Semaphore key after their credential expired and was removed.
         require(cred.commitment != 0, "Credential never registered");
         require(cred.pendingRecovery.executeAfter == 0, "Recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "Recovery not enabled for app");
-
-        {
-            (address signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
-            require(trustedVerifiers[signer], "Untrusted verifier");
-        }
 
         _executeInitiateRecovery(attestation_, registrationHash, merkleProofSiblings_);
     }
@@ -659,6 +631,35 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         delete cred.pendingRecovery;
 
         emit RecoveryExecuted(registrationHash_, request.newCommitment);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Attestation verification
+    // ──────────────────────────────────────────────
+
+    /// @notice Verifies an attestation's validity: credential group and app are active,
+    ///         registry address matches, attestation is not expired, and signature is from
+    ///         a trusted verifier.
+    /// @param attestation_ The attestation to verify.
+    /// @param v ECDSA recovery parameter.
+    /// @param r ECDSA signature component.
+    /// @param s ECDSA signature component.
+    /// @return signer The recovered signer address.
+    function verifyAttestation(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
+        public
+        view
+        returns (address signer)
+    {
+        require(
+            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
+            "Credential group is inactive"
+        );
+        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "App is not active");
+        require(attestation_.registry == address(this), "Wrong attestation message");
+        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "Attestation expired");
+
+        (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+        require(trustedVerifiers[signer], "Untrusted verifier");
     }
 
     // ──────────────────────────────────────────────
