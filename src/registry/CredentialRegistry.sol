@@ -139,13 +139,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
-        address signer = verifyAttestation(attestation_, v, r, s);
-
-        bytes32 registrationHash = keccak256(
-            abi.encode(
-                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
-            )
-        );
+        (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(!cred.registered, "Credential already registered");
         require(cred.commitment == 0, "Use renewCredential");
@@ -208,14 +202,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
     function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
-        address signer = verifyAttestation(attestation_, v, r, s);
-
-        bytes32 registrationHash = keccak256(
-            abi.encode(
-                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
-            )
-        );
-
+        (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         uint256 storedCommitment = cred.commitment;
         require(storedCommitment != 0, "Credential never registered");
@@ -568,14 +555,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes32 s,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        verifyAttestation(attestation_, v, r, s);
-
-        bytes32 registrationHash = keccak256(
-            abi.encode(
-                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
-            )
-        );
-
+        (, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
 
         // Allow recovery for expired+removed credentials (cred.registered is false
@@ -660,7 +640,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function verifyAttestation(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
         public
         view
-        returns (address signer)
+        returns (address signer, bytes32 registrationHash)
     {
         require(
             credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
@@ -672,6 +652,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
 
         (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
         require(trustedVerifiers[signer], "Untrusted verifier");
+
+        registrationHash = keccak256(
+            abi.encode(
+                attestation_.registry, attestation_.credentialGroupId, attestation_.credentialId, attestation_.appId
+            )
+        );
     }
 
     // ──────────────────────────────────────────────
