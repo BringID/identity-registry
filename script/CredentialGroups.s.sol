@@ -39,51 +39,71 @@ contract DeployCredentialGroups is Script {
 
         // --- credential group IDs, validity durations, and scores ---
         uint256[] memory ids = new uint256[](15);
+        uint256[] memory durations = new uint256[](15);
         uint256[] memory scores = new uint256[](15);
 
-        // Farcaster Low / Medium / High
+        // Farcaster Low / Medium / High — 30 / 60 / 90 days
         ids[0] = 1;
+        durations[0] = 30 days;
         scores[0] = 2;
         ids[1] = 2;
+        durations[1] = 60 days;
         scores[1] = 5;
         ids[2] = 3;
+        durations[2] = 90 days;
         scores[2] = 10;
 
-        // GitHub Low / Medium / High
+        // GitHub Low / Medium / High — 30 / 60 / 90 days
         ids[3] = 4;
+        durations[3] = 30 days;
         scores[3] = 2;
         ids[4] = 5;
+        durations[4] = 60 days;
         scores[4] = 5;
         ids[5] = 6;
+        durations[5] = 90 days;
         scores[5] = 10;
 
-        // X (Twitter) Low / Medium / High
+        // X (Twitter) Low / Medium / High — 30 / 60 / 90 days
         ids[6] = 7;
+        durations[6] = 30 days;
         scores[6] = 2;
         ids[7] = 8;
+        durations[7] = 60 days;
         scores[7] = 5;
         ids[8] = 9;
+        durations[8] = 90 days;
         scores[8] = 10;
 
-        // Binary credentials
-        ids[9] = 10; // zkPassport
+        // zkPassport / Self — 180 days
+        ids[9] = 10;
+        durations[9] = 180 days;
         scores[9] = 20;
-        ids[10] = 11; // Self
+        ids[10] = 11;
+        durations[10] = 180 days;
         scores[10] = 20;
+
+        // zkTLS binary credentials — 180 days
         ids[11] = 12; // Uber Rides
+        durations[11] = 180 days;
         scores[11] = 10;
         ids[12] = 13; // Apple Subs
+        durations[12] = 180 days;
         scores[12] = 10;
+
+        // zkKYC credentials — 180 days
         ids[13] = 14; // Binance KYC
+        durations[13] = 180 days;
         scores[13] = 20;
         ids[14] = 15; // OKX KYC
+        durations[14] = 180 days;
         scores[14] = 20;
 
-        // Create credential groups that don't already exist (validityDuration = 0 → no expiry)
+        // Create credential groups that don't already exist
         for (uint256 i = 0; i < ids.length; i++) {
             (ICredentialRegistry.CredentialGroupStatus status,) = registry.credentialGroups(ids[i]);
             if (status == ICredentialRegistry.CredentialGroupStatus.UNDEFINED) {
-                registry.createCredentialGroup(ids[i], 0);
+                registry.createCredentialGroup(ids[i], durations[i]);
             }
         }
 
