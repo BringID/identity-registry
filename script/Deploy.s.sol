@@ -47,19 +47,22 @@ contract DeployToken is Script {
 
 contract Deploy is Script {
     function run() public {
-        address trustedVerifierAddress = 0x7043BE13423Ae8Fc371B8B18AEB2A40582f9CD69;
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerKey);
 
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        vm.startBroadcast(deployerKey);
         Semaphore semaphore;
         if (vm.envAddress("SEMAPHORE_ADDRESS") != address(0)) {
             semaphore = Semaphore(vm.envAddress("SEMAPHORE_ADDRESS"));
         } else {
             revert("SEMAPHORE_ADDRESS should be provided");
         }
-        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifierAddress);
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), deployer);
         vm.stopBroadcast();
 
+        console.log("Deployer:", deployer);
         console.log("Semaphore:", address(semaphore));
         console.log("Registry:", address(registry));
+        console.log("DefaultScorer:", registry.defaultScorer());
     }
 }

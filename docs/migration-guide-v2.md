@@ -7,8 +7,8 @@ This guide is for repos that integrate with the BringID CredentialRegistry contr
 | Contract | Address |
 |---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0x3353a67d5963C263F3c6F4dA3Fc45509981160A9` |
-| DefaultScorer | `0x8AD32E9076BDe94B4b31A0b7a283fed23dFe5af4` |
+| CredentialRegistry | `0xB0e2bf7d3D6536ad4b5851533bb120C9dbF5493b` |
+| DefaultScorer | `0x24EDA18506D9509F438c53496274A2fA4675888F` |
 
 Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
 
@@ -98,8 +98,10 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 +    bytes32 credentialId;
 +    uint256 appId;
      uint256 semaphoreIdentityCommitment;
++    uint256 issuedAt;
  }
 ```
+The `issuedAt` timestamp is signed by the verifier. The contract enforces `block.timestamp <= issuedAt + attestationValidityDuration` (default 30 minutes, configurable via `setAttestationValidityDuration()`).
 
 **`CredentialGroupProof`** — added `appId`:
 ```diff
@@ -113,6 +115,7 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 **New structs:**
 - `App` — `{ AppStatus status, uint256 recoveryTimelock, address admin, address scorer }`
 - `RecoveryRequest` — `{ uint256 credentialGroupId, uint256 appId, uint256 newCommitment, uint256 executeAfter }`
+- `CredentialRecord` — `{ bool registered, bool expired, uint256 commitment, uint256 expiresAt, RecoveryRequest pendingRecovery }`
 
 ### Renamed / replaced functions
 
@@ -136,9 +139,12 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 | `setAppScorer(appId, scorer)` | write | App admin sets custom scorer |
 | `setAppAdmin(appId, newAdmin)` | write | App admin transfers admin role |
 | `setAppRecoveryTimelock(appId, timelock)` | write | App admin sets recovery timelock |
-| `initiateRecovery(attestation, signature)` | write | Start key recovery |
+| `renewCredential(attestation, signature)` | write | Renew a previously-registered credential (same commitment, resets validity) |
+| `initiateRecovery(attestation, signature, siblings)` | write | Start key recovery |
 | `executeRecovery(registrationHash)` | write | Finalize recovery after timelock |
-| `removeExpiredCredential(credentialGroupId, credentialId, appId, siblings)` | write | Evict expired credential |
+| `removeExpiredCredential(credentialGroupId, credentialId, appId, siblings)` | write | Evict expired credential (blocked during pending recovery) |
+| `activateApp(appId)` | write | App admin reactivates a suspended app |
+| `setAttestationValidityDuration(duration)` | write | Owner-only, set max attestation age |
 | `createCredentialGroup(id, validityDuration)` | write | Owner-only, now takes `validityDuration` |
 | `setCredentialGroupValidityDuration(id, duration)` | write | Owner-only, update expiry for future registrations |
 | `getCredentialGroupIds()` | view | List all credential group IDs |
@@ -152,7 +158,7 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 | `ProofValidated(credentialGroupId)` | `ProofValidated(credentialGroupId, appId, nullifier)` |
 | `TLSNVerifierSet(verifier)` | `TrustedVerifierAdded(verifier)` / `TrustedVerifierRemoved(verifier)` |
 
-**New events:** `AppSemaphoreGroupCreated`, `AppRegistered`, `AppSuspended`, `AppScorerSet`, `AppAdminTransferred`, `AppRecoveryTimelockSet`, `RecoveryInitiated`, `RecoveryExecuted`, `CredentialExpired`, `CredentialGroupValidityDurationSet`.
+**New events:** `AppSemaphoreGroupCreated`, `AppRegistered`, `AppSuspended`, `AppActivated`, `AppScorerSet`, `AppAdminTransferred`, `AppRecoveryTimelockSet`, `RecoveryInitiated`, `RecoveryExecuted`, `CredentialRenewed`, `CredentialExpired`, `CredentialGroupValidityDurationSet`, `AttestationValidityDurationSet`.
 
 ### New contracts
 
@@ -170,11 +176,16 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 
 The constructor now deploys a `DefaultScorer` automatically and adds the provided address as the first trusted verifier.
 
+### Error messages
+
+All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered"`, `"BID::app not active"`). If your integration matches on revert reason strings, update them accordingly.
+
 ## Quick Migration Checklist
 
 - [ ] Update contract addresses to Base Sepolia values above
 - [ ] Update ABI imports — `ICredentialRegistry`, events, and structs have changed
-- [ ] Add `appId` to all `Attestation` and `CredentialGroupProof` structs
+- [ ] Add `appId` and `issuedAt` to all `Attestation` structs
+- [ ] Add `appId` to all `CredentialGroupProof` structs
 - [ ] Rename `idHash` → `credentialId` in attestation construction
 - [ ] Replace `joinGroup()` calls with `registerCredential()`
 - [ ] Replace `validateProof()` with `submitProof()` or `verifyProof()` (view)
@@ -182,3 +193,4 @@ The constructor now deploys a `DefaultScorer` automatically and adds the provide
 - [ ] Replace `credentialGroupScore()` with `DefaultScorer.getScore()`
 - [ ] Register your app via `registerApp(recoveryTimelock)` and use the returned `appId`
 - [ ] If listening to events, update to new event names and signatures
+- [ ] If matching on revert reason strings, update to `BID::` prefixed messages
