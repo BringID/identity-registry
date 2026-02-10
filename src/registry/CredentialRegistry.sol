@@ -204,15 +204,14 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
-        uint256 storedCommitment = cred.commitment;
-        require(storedCommitment != 0, "Credential never registered");
-        require(attestation_.semaphoreIdentityCommitment == storedCommitment, "Must use same commitment");
+        require(cred.commitment != 0, "Credential never registered");
+        require(attestation_.semaphoreIdentityCommitment == cred.commitment, "Must use same commitment");
         require(cred.pendingRecovery.executeAfter == 0, "Recovery pending");
 
         // Re-add to Semaphore if credential was removed
         if (!cred.registered) {
-            uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
-            SEMAPHORE.addMember(semaphoreGroupId, storedCommitment);
+            uint256 semaphoreGroupId = appSemaphoreGroups[attestation_.credentialGroupId][attestation_.appId];
+            SEMAPHORE.addMember(semaphoreGroupId, cred.commitment);
             cred.registered = true;
         }
 
@@ -229,7 +228,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit CredentialRenewed(
             attestation_.credentialGroupId,
             attestation_.appId,
-            storedCommitment,
+            cred.commitment,
             attestation_.credentialId,
             registrationHash,
             signer,
