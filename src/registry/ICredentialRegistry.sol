@@ -60,17 +60,67 @@ interface ICredentialRegistry {
         uint256 issuedAt;
     }
 
+    // ── View helpers ──────────────────────────────
+    function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
+    function appIsActive(uint256 appId_) external view returns (bool);
+    function getCredentialGroupIds() external view returns (uint256[] memory);
+    function verifyAttestation(Attestation calldata attestation_, uint8 v, bytes32 r, bytes32 s)
+        external
+        view
+        returns (address signer, bytes32 registrationHash);
+
+    // ── Credential registration ─────────────────
+    function registerCredential(Attestation calldata attestation_, bytes calldata signature_) external;
+    function registerCredential(Attestation calldata attestation_, uint8 v, bytes32 r, bytes32 s) external;
+
+    // ── Credential renewal ──────────────────────
+    function renewCredential(Attestation calldata attestation_, bytes calldata signature_) external;
+    function renewCredential(Attestation calldata attestation_, uint8 v, bytes32 r, bytes32 s) external;
+
+    // ── Proof validation ────────────────────────
     function submitProof(uint256 context_, CredentialGroupProof calldata proof) external returns (uint256);
     function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
     function verifyProof(uint256 context_, CredentialGroupProof calldata proof) external view returns (bool);
     function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (bool);
     function getScore(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (uint256);
-    function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
-    function appIsActive(uint256 appId_) external view returns (bool);
+
+    // ── Credential expiry ───────────────────────
     function removeExpiredCredential(
         uint256 credentialGroupId_,
         bytes32 credentialId_,
         uint256 appId_,
         uint256[] calldata merkleProofSiblings_
     ) external;
+
+    // ── Recovery ────────────────────────────────
+    function initiateRecovery(
+        Attestation calldata attestation_,
+        bytes calldata signature_,
+        uint256[] calldata merkleProofSiblings_
+    ) external;
+    function initiateRecovery(
+        Attestation calldata attestation_,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint256[] calldata merkleProofSiblings_
+    ) external;
+    function executeRecovery(bytes32 registrationHash_) external;
+
+    // ── Owner administration ────────────────────
+    function createCredentialGroup(uint256 credentialGroupId_, uint256 validityDuration_, uint256 familyId_) external;
+    function setCredentialGroupValidityDuration(uint256 credentialGroupId_, uint256 validityDuration_) external;
+    function setCredentialGroupFamily(uint256 credentialGroupId_, uint256 familyId_) external;
+    function setAttestationValidityDuration(uint256 duration_) external;
+    function suspendCredentialGroup(uint256 credentialGroupId_) external;
+    function addTrustedVerifier(address verifier_) external;
+    function removeTrustedVerifier(address verifier_) external;
+
+    // ── App management ──────────────────────────
+    function registerApp(uint256 recoveryTimelock_) external returns (uint256);
+    function suspendApp(uint256 appId_) external;
+    function activateApp(uint256 appId_) external;
+    function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) external;
+    function setAppAdmin(uint256 appId_, address newAdmin_) external;
+    function setAppScorer(uint256 appId_, address scorer_) external;
 }

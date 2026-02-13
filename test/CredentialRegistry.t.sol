@@ -24,6 +24,17 @@ contract MockScorer is IScorer {
     function getScore(uint256 credentialGroupId_) external view returns (uint256) {
         return scores[credentialGroupId_];
     }
+
+    function getScores(uint256[] calldata credentialGroupIds_) external view returns (uint256[] memory scores_) {
+        scores_ = new uint256[](credentialGroupIds_.length);
+        for (uint256 i; i < credentialGroupIds_.length; ++i) {
+            scores_[i] = scores[credentialGroupIds_[i]];
+        }
+    }
+
+    function getAllScores() external pure returns (uint256[] memory, uint256[] memory) {
+        revert("not implemented");
+    }
 }
 
 contract CredentialRegistryTest is Test {
