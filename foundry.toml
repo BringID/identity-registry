@@ -6,6 +6,9 @@ via_ir = true
 optimizer = true
 optimizer_runs = 200
 
+[profile.ci]
+via_ir = false
+
 [fuzz]
 runs = 10
 max_test_rejects = 100

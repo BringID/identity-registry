@@ -9,30 +9,25 @@ import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 contract Token is ERC20 {
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address mintTo,
-        uint256 mintAmount
-    ) ERC20(name_, symbol_){
+    constructor(string memory name_, string memory symbol_, address mintTo, uint256 mintAmount) ERC20(name_, symbol_) {
         _mint(mintTo, mintAmount);
     }
 }
 
 contract DeployDev is Script {
     function run() public {
-        address tlsnVerifierAddress = 0x3c50f7055D804b51e506Bc1EA7D082cB1548376C;
+        address trustedVerifierAddress = 0x3c50f7055D804b51e506Bc1EA7D082cB1548376C;
         address deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
 
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Semaphore semaphore;
-            if (vm.envAddress('SEMAPHORE_ADDRESS') != address(0)) {
-                semaphore = Semaphore(vm.envAddress('SEMAPHORE_ADDRESS'));
-            } else {
-                revert("Semaphore address is not provided");
-            }
-            CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifierAddress);
-            Token bringToken = new Token("Bring", "BRING", deployer, 10**32);
+        Semaphore semaphore;
+        if (vm.envAddress("SEMAPHORE_ADDRESS") != address(0)) {
+            semaphore = Semaphore(vm.envAddress("SEMAPHORE_ADDRESS"));
+        } else {
+            revert("Semaphore address is not provided");
+        }
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifierAddress);
+        Token bringToken = new Token("Bring", "BRING", deployer, 10 ** 32);
         vm.stopBroadcast();
 
         console.log("Registry:", address(registry));
@@ -44,7 +39,7 @@ contract DeployToken is Script {
     function run() public {
         address deployer = vm.addr(vm.envUint("PRIVATE_KEY"));
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Token bringToken = new Token("Bring", "BRING", deployer, 10**32);
+        Token bringToken = new Token("Bring", "BRING", deployer, 10 ** 32);
         vm.stopBroadcast();
         console.log("Bring Token:", address(bringToken));
     }
@@ -52,19 +47,24 @@ contract DeployToken is Script {
 
 contract Deploy is Script {
     function run() public {
-        address tlsnVerifierAddress = 0x7043BE13423Ae8Fc371B8B18AEB2A40582f9CD69;
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(deployerKey);
+        address trustedVerifier = vm.envOr("TRUSTED_VERIFIER", deployer);
 
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-            Semaphore semaphore;
-            if (vm.envAddress('SEMAPHORE_ADDRESS') != address(0)) {
-                semaphore = Semaphore(vm.envAddress('SEMAPHORE_ADDRESS'));
-            } else {
-                revert("SEMAPHORE_ADDRESS should be provided");
-            }
-            CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifierAddress);
+        vm.startBroadcast(deployerKey);
+        Semaphore semaphore;
+        if (vm.envAddress("SEMAPHORE_ADDRESS") != address(0)) {
+            semaphore = Semaphore(vm.envAddress("SEMAPHORE_ADDRESS"));
+        } else {
+            revert("SEMAPHORE_ADDRESS should be provided");
+        }
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier);
         vm.stopBroadcast();
 
+        console.log("Deployer:", deployer);
+        console.log("Trusted verifier:", trustedVerifier);
         console.log("Semaphore:", address(semaphore));
         console.log("Registry:", address(registry));
+        console.log("DefaultScorer:", registry.defaultScorer());
     }
 }

@@ -4,383 +4,671 @@ pragma solidity ^0.8.23;
 import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
+import {IScorer} from "../src/registry/IScorer.sol";
+import {DefaultScorer} from "../src/registry/DefaultScorer.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
 import {Semaphore} from "semaphore-protocol/Semaphore.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
+import "../src/registry/Events.sol";
+
+contract MockScorer is IScorer {
+    mapping(uint256 => uint256) public scores;
+
+    function setScore(uint256 credentialGroupId_, uint256 score_) public {
+        scores[credentialGroupId_] = score_;
+    }
+
+    function getScore(uint256 credentialGroupId_) external view returns (uint256) {
+        return scores[credentialGroupId_];
+    }
+
+    function getScores(uint256[] calldata credentialGroupIds_) external view returns (uint256[] memory scores_) {
+        scores_ = new uint256[](credentialGroupIds_.length);
+        for (uint256 i; i < credentialGroupIds_.length; ++i) {
+            scores_[i] = scores[credentialGroupIds_[i]];
+        }
+    }
+
+    function getAllScores() external pure returns (uint256[] memory, uint256[] memory) {
+        revert("not implemented");
+    }
+}
 
 contract CredentialRegistryTest is Test {
     using ECDSA for bytes32;
 
     CredentialRegistry registry;
+    DefaultScorer scorer;
     Semaphore semaphore;
     SemaphoreVerifier semaphoreVerifier;
-    
+
     address owner;
-    address tlsnVerifier;
-    uint256 tlsnVerifierPrivateKey;
-    
-    event CredentialGroupCreated(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroup credentialGroup);
-    event CredentialAdded(uint256 indexed credentialGroupId, uint256 indexed commitment);
-    event ProofValidated(uint256 indexed credentialGroupId);
-    event TLSNVerifierSet(address indexed verifier);
+    address trustedVerifier;
+    uint256 trustedVerifierPrivateKey;
+
+    uint256 DEFAULT_APP_ID;
+
+    event CredentialGroupCreated(
+        uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroup credentialGroup
+    );
+    event AppSemaphoreGroupCreated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 semaphoreGroupId);
+    event CredentialRegistered(
+        uint256 indexed credentialGroupId,
+        uint256 indexed appId,
+        uint256 indexed commitment,
+        bytes32 credentialId,
+        bytes32 registrationHash,
+        address verifier,
+        uint256 expiresAt
+    );
+    event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
+    event TrustedVerifierAdded(address indexed verifier);
+    event TrustedVerifierRemoved(address indexed verifier);
+    event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
+    event AppSuspended(uint256 indexed appId);
+    event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
+    event AppScorerSet(uint256 indexed appId, address indexed scorer);
+    event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
+    event RecoveryInitiated(
+        bytes32 indexed registrationHash,
+        uint256 indexed credentialGroupId,
+        uint256 oldCommitment,
+        uint256 newCommitment,
+        uint256 executeAfter
+    );
+    event RecoveryExecuted(bytes32 indexed registrationHash, uint256 newCommitment);
+    event CredentialExpired(
+        uint256 indexed credentialGroupId, uint256 indexed appId, bytes32 credentialId, bytes32 registrationHash
+    );
+    event CredentialRenewed(
+        uint256 indexed credentialGroupId,
+        uint256 indexed appId,
+        uint256 indexed commitment,
+        bytes32 credentialId,
+        bytes32 registrationHash,
+        address verifier,
+        uint256 expiresAt
+    );
+    event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
 
     function setUp() public {
         owner = address(this);
-        (tlsnVerifier, tlsnVerifierPrivateKey) = makeAddrAndKey("tlsn-verifier");
-        
+        (trustedVerifier, trustedVerifierPrivateKey) = makeAddrAndKey("trusted-verifier");
+
         semaphoreVerifier = new SemaphoreVerifier();
         semaphore = new Semaphore(ISemaphoreVerifier(address(semaphoreVerifier)));
-        registry = new CredentialRegistry(ISemaphore(address(semaphore)), tlsnVerifier);
+        registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier);
+
+        scorer = DefaultScorer(registry.defaultScorer());
+
+        // Register default app (caller = owner = admin)
+        DEFAULT_APP_ID = registry.registerApp(0);
     }
+
+    // --- Helper functions ---
+
+    function _createAttestation(uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 commitment)
+        internal
+        view
+        returns (ICredentialRegistry.Attestation memory)
+    {
+        return ICredentialRegistry.Attestation({
+            registry: address(registry),
+            credentialGroupId: credentialGroupId,
+            credentialId: credentialId,
+            appId: appId,
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp
+        });
+    }
+
+    function _signAttestation(ICredentialRegistry.Attestation memory att)
+        internal
+        view
+        returns (uint8 v, bytes32 r, bytes32 s)
+    {
+        return vm.sign(trustedVerifierPrivateKey, keccak256(abi.encode(att)).toEthSignedMessageHash());
+    }
+
+    function _registerCredential(uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 commitment)
+        internal
+    {
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, appId, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        registry.registerCredential(att, v, r, s);
+    }
+
+    function _renewCredential(uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 commitment)
+        internal
+    {
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, appId, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        registry.renewCredential(att, v, r, s);
+    }
+
+    function _makeProof(
+        uint256 credentialGroupId,
+        uint256 appId,
+        uint256 commitmentKey,
+        uint256 scope,
+        uint256 commitment
+    ) internal returns (ICredentialRegistry.CredentialGroupProof memory) {
+        uint256[] memory comms = new uint256[](1);
+        comms[0] = commitment;
+        (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
+            TestUtils.semaphoreProof(commitmentKey, scope, comms);
+        return ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: appId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: depth,
+                merkleTreeRoot: root,
+                nullifier: nullifier,
+                message: msg_,
+                scope: scope,
+                points: pts
+            })
+        });
+    }
+
+    // --- Constructor tests ---
 
     function testConstructor() public {
         assertEq(address(registry.SEMAPHORE()), address(semaphore));
-        assertEq(registry.TLSNVerifier(), tlsnVerifier);
+        assertTrue(registry.trustedVerifiers(trustedVerifier));
         assertEq(registry.owner(), owner);
     }
 
+    function testConstructorRejectsZeroTrustedVerifier() public {
+        vm.expectRevert("BID::invalid trusted verifier");
+        new CredentialRegistry(ISemaphore(address(semaphore)), address(0));
+    }
+
+    function testDefaultScorerDeployedInConstructor() public {
+        address scorerAddr = registry.defaultScorer();
+        assertTrue(scorerAddr != address(0));
+        // DefaultScorer is owned by the deployer (this test contract)
+        DefaultScorer ds = DefaultScorer(scorerAddr);
+        assertEq(ds.owner(), owner);
+    }
+
+    function testDefaultScorerSetScore() public {
+        scorer.setScore(1, 500);
+        assertEq(scorer.getScore(1), 500);
+    }
+
+    // --- Credential group tests ---
+
     function testCreateCredentialGroup() public {
         uint256 credentialGroupId = 1;
-        uint256 score = 100;
-        
+
         vm.expectEmit(true, false, false, true);
-        emit CredentialGroupCreated(credentialGroupId, ICredentialRegistry.CredentialGroup(score, 0, ICredentialRegistry.CredentialGroupStatus.ACTIVE));
-        
-        registry.createCredentialGroup(credentialGroupId, score);
-        
-        (uint256 storedScore, uint256 groupId, ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(credentialGroupId);
-        assertEq(storedScore, score);
-        assertTrue(groupId >= 0); // Group ID should exist (can be 0 for first group)
+        emit CredentialGroupCreated(
+            credentialGroupId,
+            ICredentialRegistry.CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, 0, 0)
+        );
+
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        (ICredentialRegistry.CredentialGroupStatus status,,) = registry.credentialGroups(credentialGroupId);
         assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
     }
 
     function testCreateCredentialGroupOnlyOwner() public {
         address notOwner = makeAddr("not-owner");
-        
+
         vm.prank(notOwner);
         vm.expectRevert("Ownable: caller is not the owner");
-        registry.createCredentialGroup(1, 100);
+        registry.createCredentialGroup(1, 0, 0);
     }
 
     function testCreateCredentialGroupDuplicate() public {
         uint256 credentialGroupId = 1;
-        
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        vm.expectRevert("Credential group exists");
-        registry.createCredentialGroup(credentialGroupId, 200);
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        vm.expectRevert("BID::credential group exists");
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
     }
 
-    function testCreateCredentialGroupWithZeroScore() public {
-        uint256 credentialGroupId = 1;
-        uint256 score = 0; // Zero score should be allowed
-        
-        vm.expectEmit(true, false, false, true);
-        emit CredentialGroupCreated(credentialGroupId, ICredentialRegistry.CredentialGroup(score, 0, ICredentialRegistry.CredentialGroupStatus.ACTIVE));
-        
-        registry.createCredentialGroup(credentialGroupId, score);
-        
-        (uint256 storedScore, uint256 groupId, ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(credentialGroupId);
-        assertEq(storedScore, 0); // Zero score should be stored correctly
-        assertTrue(groupId >= 0); // Group ID should exist (can be 0 for first group)
-        assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
-    }
-
-    function testFuzzNewVerification(uint256 credentialGroupId, uint256 score) public {
-        // Allow score to be 0 - sometimes verification is needed without affecting score
+    function testFuzzNewVerification(uint256 credentialGroupId) public {
         vm.assume(credentialGroupId != 0 && credentialGroupId < type(uint256).max);
-        vm.assume(score < type(uint256).max); // Include score = 0
-        
-        registry.createCredentialGroup(credentialGroupId, score);
-        
-        (uint256 storedScore, uint256 groupId, ICredentialRegistry.CredentialGroupStatus status) = registry.credentialGroups(credentialGroupId);
-        assertEq(storedScore, score);
-        assertTrue(groupId >= 0); // Group ID should exist (can be 0 for first group)
+
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        (ICredentialRegistry.CredentialGroupStatus status,,) = registry.credentialGroups(credentialGroupId);
         assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
     }
 
     function testCreateCredentialGroupShouldRejectZeroId() public {
         vm.expectRevert();
-        registry.createCredentialGroup(0, 100);
+        registry.createCredentialGroup(0, 0, 0);
     }
 
-    function testSetVerifierShouldRejectZeroAddress() public {
-        vm.expectRevert();
-        registry.setVerifier(address(0));
-    }
+    // --- Trusted verifier tests ---
 
-    function testSetVerifier() public {
+    function testAddTrustedVerifier() public {
         address newVerifier = makeAddr("new-verifier");
-        
+
         vm.expectEmit(true, false, false, false);
-        emit TLSNVerifierSet(newVerifier);
-        
-        registry.setVerifier(newVerifier);
-        assertEq(registry.TLSNVerifier(), newVerifier);
+        emit TrustedVerifierAdded(newVerifier);
+
+        registry.addTrustedVerifier(newVerifier);
+        assertTrue(registry.trustedVerifiers(newVerifier));
     }
 
-    function testSetVerifierOnlyOwner() public {
+    function testAddTrustedVerifierRejectsZeroAddress() public {
+        vm.expectRevert("BID::invalid verifier address");
+        registry.addTrustedVerifier(address(0));
+    }
+
+    function testAddTrustedVerifierOnlyOwner() public {
         address notOwner = makeAddr("not-owner");
-        
+
         vm.prank(notOwner);
         vm.expectRevert("Ownable: caller is not the owner");
-        registry.setVerifier(makeAddr("new-verifier"));
+        registry.addTrustedVerifier(makeAddr("new-verifier"));
     }
 
-    function testJoinGroup() public {
-        uint256 credentialGroupId = 1;
-        uint256 score = 100;
-        registry.createCredentialGroup(credentialGroupId, score);
-        
-        bytes32 idHash = keccak256("test-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        vm.expectEmit(true, false, false, true);
-        emit CredentialAdded(credentialGroupId, commitment);
-        
-        registry.joinGroup(message, v, r, s);
+    function testRemoveTrustedVerifier() public {
+        address newVerifier = makeAddr("new-verifier");
+        registry.addTrustedVerifier(newVerifier);
+        assertTrue(registry.trustedVerifiers(newVerifier));
+
+        vm.expectEmit(true, false, false, false);
+        emit TrustedVerifierRemoved(newVerifier);
+
+        registry.removeTrustedVerifier(newVerifier);
+        assertFalse(registry.trustedVerifiers(newVerifier));
     }
 
-    function testJoinGroupWithBytes() public {
+    function testRemoveTrustedVerifierOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.removeTrustedVerifier(trustedVerifier);
+    }
+
+    function testRemoveTrustedVerifierNotTrusted() public {
+        address untrusted = makeAddr("untrusted");
+        vm.expectRevert("BID::verifier not trusted");
+        registry.removeTrustedVerifier(untrusted);
+    }
+
+    // --- App management tests ---
+
+    function testRegisterAppPublic() public {
+        address appAdmin = makeAddr("app-admin");
+
+        vm.prank(appAdmin);
+        vm.expectEmit(true, true, false, true);
+        emit AppRegistered(2, appAdmin, 0);
+
+        uint256 appId = registry.registerApp(0);
+        assertEq(appId, 2);
+        assertTrue(registry.appIsActive(appId));
+
+        (ICredentialRegistry.AppStatus status, uint256 timelock, address admin, address appScorer) =
+            registry.apps(appId);
+        assertEq(uint256(status), uint256(ICredentialRegistry.AppStatus.ACTIVE));
+        assertEq(timelock, 0);
+        assertEq(admin, appAdmin);
+        assertEq(appScorer, registry.defaultScorer());
+    }
+
+    function testRegisterAppReturnsIncrementingIds() public {
+        uint256 id1 = registry.registerApp(0);
+        uint256 id2 = registry.registerApp(0);
+        uint256 id3 = registry.registerApp(0);
+        // DEFAULT_APP_ID = 1 from setUp
+        assertEq(id1, 2);
+        assertEq(id2, 3);
+        assertEq(id3, 4);
+    }
+
+    function testSuspendApp() public {
+        uint256 appId = registry.registerApp(0);
+        assertTrue(registry.appIsActive(appId));
+
+        vm.expectEmit(true, false, false, false);
+        emit AppSuspended(appId);
+
+        registry.suspendApp(appId);
+        assertFalse(registry.appIsActive(appId));
+    }
+
+    function testSuspendAppNotAdmin() public {
+        uint256 appId = registry.registerApp(0);
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert("BID::not app admin");
+        registry.suspendApp(appId);
+    }
+
+    function testSuspendAppNotActive() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+        vm.expectRevert("BID::app not active");
+        registry.suspendApp(appId);
+    }
+
+    function testActivateApp() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+        assertFalse(registry.appIsActive(appId));
+
+        vm.expectEmit(true, false, false, false);
+        emit AppActivated(appId);
+
+        registry.activateApp(appId);
+        assertTrue(registry.appIsActive(appId));
+    }
+
+    function testActivateAppNotAdmin() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert("BID::not app admin");
+        registry.activateApp(appId);
+    }
+
+    function testActivateAppNotSuspended() public {
+        uint256 appId = registry.registerApp(0);
+        vm.expectRevert("BID::app not suspended");
+        registry.activateApp(appId);
+    }
+
+    function testSetAppAdmin() public {
+        address newAdmin = makeAddr("new-admin");
+
+        vm.expectEmit(true, true, true, false);
+        emit AppAdminTransferred(DEFAULT_APP_ID, owner, newAdmin);
+
+        registry.setAppAdmin(DEFAULT_APP_ID, newAdmin);
+
+        (,, address admin,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(admin, newAdmin);
+    }
+
+    function testSetAppAdminNonAdmin() public {
+        address notAdmin = makeAddr("not-admin");
+
+        vm.prank(notAdmin);
+        vm.expectRevert("BID::not app admin");
+        registry.setAppAdmin(DEFAULT_APP_ID, notAdmin);
+    }
+
+    function testSetAppScorer() public {
+        MockScorer customScorer = new MockScorer();
+
+        vm.expectEmit(true, true, false, false);
+        emit AppScorerSet(DEFAULT_APP_ID, address(customScorer));
+
+        registry.setAppScorer(DEFAULT_APP_ID, address(customScorer));
+
+        (,,, address appScorer) = registry.apps(DEFAULT_APP_ID);
+        assertEq(appScorer, address(customScorer));
+    }
+
+    function testSetAppScorerNonAdmin() public {
+        address notAdmin = makeAddr("not-admin");
+
+        vm.prank(notAdmin);
+        vm.expectRevert("BID::not app admin");
+        registry.setAppScorer(DEFAULT_APP_ID, address(0x123));
+    }
+
+    // --- JoinGroup tests ---
+
+    function testRegisterCredential() public {
         uint256 credentialGroupId = 1;
-        uint256 score = 100;
-        registry.createCredentialGroup(credentialGroupId, score);
-        
-        bytes32 idHash = keccak256("test-id");
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
+        vm.expectEmit(true, true, true, false);
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0), 0);
+
+        registry.registerCredential(message, v, r, s);
+    }
+
+    function testRegisterCredentialWithBytes() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
         bytes memory signature = abi.encodePacked(r, s, v);
-        
-        vm.expectEmit(true, false, false, true);
-        emit CredentialAdded(credentialGroupId, commitment);
-        
-        registry.joinGroup(message, signature);
+
+        vm.expectEmit(true, true, true, false);
+        emit CredentialRegistered(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0), 0);
+
+        registry.registerCredential(message, signature);
     }
 
-    function testJoinGroupInactiveVerification() public {
+    function testRegisterCredentialInactiveVerification() public {
         uint256 credentialGroupId = 1;
-        bytes32 idHash = keccak256("test-id");
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        vm.expectRevert("Credential group is inactive");
-        registry.joinGroup(message, v, r, s);
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
+        vm.expectRevert("BID::credential group inactive");
+        registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupWrongRegistry() public {
+    function testRegisterCredentialAppNotActive() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        bytes32 idHash = keccak256("test-id");
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
+        uint256 inactiveAppId = 999;
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, inactiveAppId, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
+        vm.expectRevert("BID::app not active");
+        registry.registerCredential(message, v, r, s);
+    }
+
+    function testRegisterCredentialWrongRegistry() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
         ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
             registry: address(0x123),
             credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
+            credentialId: credentialId,
+            appId: DEFAULT_APP_ID,
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp
         });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        vm.expectRevert("Wrong attestation message");
-        registry.joinGroup(message, v, r, s);
+
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
+        vm.expectRevert("BID::wrong registry address");
+        registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupUsedNonce() public {
+    function testRegisterCredentialUsedNonce() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        bytes32 idHash = keccak256("test-id");
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message, v, r, s);
-        
-        vm.expectRevert("Nonce is used");
-        registry.joinGroup(message, v, r, s);
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
+
+        registry.registerCredential(message, v, r, s);
+
+        vm.expectRevert("BID::already registered");
+        registry.registerCredential(message, v, r, s);
     }
 
-    function testJoinGroupUsedNonceWithDifferentCommitment() public {
+    function testRegisterCredentialUsedNonceWithDifferentCommitment() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        bytes32 idHash = keccak256("test-id");
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
         uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890); // Different commitment
-        
-        // First message with commitment1
-        ICredentialRegistry.Attestation memory message1 = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash, // Same idHash
-            semaphoreIdentityCommitment: commitment1
-        });
-        
-        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message1)).toEthSignedMessageHash()
-        );
-        
-        // First join should succeed
-        registry.joinGroup(message1, v1, r1, s1);
-        
-        // Second message with same registry, credentialGroupId, idHash but different commitment
-        ICredentialRegistry.Attestation memory message2 = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash, // Same idHash - this is the key point
-            semaphoreIdentityCommitment: commitment2 // Different commitment
-        });
-        
-        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message2)).toEthSignedMessageHash()
-        );
-        
-        // Second join should fail because nonce is the same (commitment not included in nonce)
-        vm.expectRevert("Nonce is used");
-        registry.joinGroup(message2, v2, r2, s2);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // First join succeeds
+        ICredentialRegistry.Attestation memory message1 =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+        (uint8 v1, bytes32 r1, bytes32 s1) = _signAttestation(message1);
+        registry.registerCredential(message1, v1, r1, s1);
+
+        // Second join with same credentialId but different commitment should fail
+        ICredentialRegistry.Attestation memory message2 =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
+        (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
+
+        vm.expectRevert("BID::already registered");
+        registry.registerCredential(message2, v2, r2, s2);
     }
 
-    function testJoinGroupInvalidSignature() public {
+    function testRegisterCredentialSameUserDifferentApps() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        bytes32 idHash = keccak256("test-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
-        
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            123456, // Wrong private key
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        vm.expectRevert("Invalid TLSN Verifier signature");
-        registry.joinGroup(message, v, r, s);
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 app2 = registry.registerApp(0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // Register for app 1
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Register for app 2 — same credentialId but different app, should succeed
+        _registerCredential(credentialGroupId, credentialId, app2, commitment2);
     }
+
+    function testRegisterCredentialInvalidSignature() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory message =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(123456, keccak256(abi.encode(message)).toEthSignedMessageHash());
+
+        vm.expectRevert("BID::untrusted verifier");
+        registry.registerCredential(message, v, r, s);
+    }
+
+    // --- Per-app Semaphore group tests ---
+
+    function testLazySemaphoreGroupCreation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        // No Semaphore group should exist yet
+        assertFalse(registry.appSemaphoreGroupCreated(credentialGroupId, DEFAULT_APP_ID));
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Now the Semaphore group should exist
+        assertTrue(registry.appSemaphoreGroupCreated(credentialGroupId, DEFAULT_APP_ID));
+    }
+
+    function testSecondRegistrationReusesSemaphoreGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        uint256 groupIdAfterFirst = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+
+        _registerCredential(credentialGroupId, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+        uint256 groupIdAfterSecond = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+
+        assertEq(groupIdAfterFirst, groupIdAfterSecond);
+    }
+
+    function testDifferentAppsDifferentSemaphoreGroups() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 app2 = registry.registerApp(0);
+
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId, keccak256("id-1"), app2, commitment2);
+
+        uint256 group1 = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+        uint256 group2 = registry.appSemaphoreGroups(credentialGroupId, app2);
+
+        assertTrue(group1 != group2);
+    }
+
+    // --- ValidateProof tests ---
 
     function testValidateProof() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        
-        // Add member to group
-        bytes32 idHash = keccak256("test-id");
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message, v, r, s);
-        
-        // Create proof
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
         address prover = makeAddr("prover");
-        uint256 context = 0;
-        uint256 scope = uint256(keccak256(abi.encode(prover, context)));
-        
-        uint256[] memory commitments = new uint256[](1);
-        commitments[0] = commitment;
-        
-        (
-            uint256 merkleTreeDepth,
-            uint256 merkleTreeRoot,
-            uint256 nullifier,
-            uint256 messageHash,
-            uint256[8] memory points
-        ) = TestUtils.semaphoreProof(commitmentKey, scope, commitments);
-        
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth,
-                merkleTreeRoot: merkleTreeRoot,
-                nullifier: nullifier,
-                message: messageHash,
-                scope: scope,
-                points: points
-            })
-        });
-        
-        vm.expectEmit(true, false, false, false);
-        emit ProofValidated(credentialGroupId);
-        
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
+
+        vm.expectEmit(true, true, false, true);
+        emit ProofValidated(credentialGroupId, DEFAULT_APP_ID, proof.semaphoreProof.nullifier);
+
         vm.prank(prover);
-        registry.validateProof(context, proof);
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofInactiveVerification() public {
         uint256 credentialGroupId = 1;
-        
+
         ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
+            appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
                 merkleTreeRoot: 0,
@@ -390,273 +678,65 @@ contract CredentialRegistryTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        
-        vm.expectRevert("Credential group is inactive");
-        registry.validateProof(0, proof);
+
+        vm.expectRevert("BID::credential group inactive");
+        registry.submitProof(0, proof);
+    }
+
+    function testValidateProofAppNotActive() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 inactiveAppId = 999;
+
+        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: inactiveAppId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert("BID::app not active");
+        registry.submitProof(0, proof);
     }
 
     function testValidateProofWrongScope() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
         uint256 commitmentKey = 12345;
         uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        
-        // Add member to group
-        bytes32 idHash = keccak256("test-id");
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message, v, r, s);
-        
-        // Create proof with wrong scope
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
         address prover = makeAddr("prover");
-        uint256 context = 0;
-        uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), context)));
-        
-        uint256[] memory commitments = new uint256[](1);
-        commitments[0] = commitment;
-        
-        (
-            uint256 merkleTreeDepth,
-            uint256 merkleTreeRoot,
-            uint256 nullifier,
-            uint256 messageHash,
-            uint256[8] memory points
-        ) = TestUtils.semaphoreProof(commitmentKey, wrongScope, commitments);
-        
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth,
-                merkleTreeRoot: merkleTreeRoot,
-                nullifier: nullifier,
-                message: messageHash,
-                scope: wrongScope,
-                points: points
-            })
-        });
-        
-        vm.expectRevert("Wrong scope");
+        uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
+
+        vm.expectRevert("BID::scope mismatch");
         vm.prank(prover);
-        registry.validateProof(context, proof);
+        registry.submitProof(0, proof);
     }
 
-    function testVerifyProof() public {
+    function testValidateProofNoSemaphoreGroup() public {
         uint256 credentialGroupId = 1;
-        registry.createCredentialGroup(credentialGroupId, 100);
-        
-        uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
-        
-        // Add member to group
-        bytes32 idHash = keccak256("test-id");
-        ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId,
-            idHash: idHash,
-            semaphoreIdentityCommitment: commitment
-        });
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message, v, r, s);
-        
-        // Create proof
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
-        
-        uint256[] memory commitments = new uint256[](1);
-        commitments[0] = commitment;
-        
-        (
-            uint256 merkleTreeDepth,
-            uint256 merkleTreeRoot,
-            uint256 nullifier,
-            uint256 messageHash,
-            uint256[8] memory points
-        ) = TestUtils.semaphoreProof(commitmentKey, scope, commitments);
-        
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        // Don't register any credential — no Semaphore group exists
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
         ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth,
-                merkleTreeRoot: merkleTreeRoot,
-                nullifier: nullifier,
-                message: messageHash,
-                scope: scope,
-                points: points
-            })
-        });
-        
-        assertTrue(registry.verifyProof(proof));
-    }
-
-    function testScore() public {
-        uint256 credentialGroupId1 = 1;
-        uint256 credentialGroupId2 = 2;
-        uint256 score1 = 100;
-        uint256 score2 = 200;
-        
-        registry.createCredentialGroup(credentialGroupId1, score1);
-        registry.createCredentialGroup(credentialGroupId2, score2);
-        
-        uint256 commitmentKey1 = 12345;
-        uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
-        
-        // Add members to groups
-        bytes32 idHash1 = keccak256("test-id-1");
-        ICredentialRegistry.Attestation memory message1 = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId1,
-            idHash: idHash1,
-            semaphoreIdentityCommitment: commitment1
-        });
-        
-        bytes32 idHash2 = keccak256("test-id-2");
-        ICredentialRegistry.Attestation memory message2 = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId2,
-            idHash: idHash2,
-            semaphoreIdentityCommitment: commitment2
-        });
-        
-        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message1)).toEthSignedMessageHash()
-        );
-        
-        (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message2)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message1, v1, r1, s1);
-        registry.joinGroup(message2, v2, r2, s2);
-        
-        // Create proofs
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
-        
-        uint256[] memory commitments1 = new uint256[](1);
-        commitments1[0] = commitment1;
-        
-        uint256[] memory commitments2 = new uint256[](1);
-        commitments2[0] = commitment2;
-        
-        (
-            uint256 merkleTreeDepth1,
-            uint256 merkleTreeRoot1,
-            uint256 nullifier1,
-            uint256 messageHash1,
-            uint256[8] memory points1
-        ) = TestUtils.semaphoreProof(commitmentKey1, scope, commitments1);
-        
-        (
-            uint256 merkleTreeDepth2,
-            uint256 merkleTreeRoot2,
-            uint256 nullifier2,
-            uint256 messageHash2,
-            uint256[8] memory points2
-        ) = TestUtils.semaphoreProof(commitmentKey2, scope, commitments2);
-        
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId1,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth1,
-                merkleTreeRoot: merkleTreeRoot1,
-                nullifier: nullifier1,
-                message: messageHash1,
-                scope: scope,
-                points: points1
-            })
-        });
-        
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId2,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth2,
-                merkleTreeRoot: merkleTreeRoot2,
-                nullifier: nullifier2,
-                message: messageHash2,
-                scope: scope,
-                points: points2
-            })
-        });
-        
-        uint256 totalScore = registry.score(0, proofs);
-        assertEq(totalScore, score1 + score2);
-    }
-
-    function testScoreFailOnInactive() public {
-        uint256 credentialGroupId1 = 1;
-        uint256 credentialGroupId2 = 2;
-        uint256 score1 = 100;
-        
-        registry.createCredentialGroup(credentialGroupId1, score1);
-        // Don't create credentialGroupId2, it will be inactive
-        
-        uint256 commitmentKey1 = 12345;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        
-        // Add member to group 1
-        bytes32 idHash1 = keccak256("test-id-1");
-        ICredentialRegistry.Attestation memory message1 = ICredentialRegistry.Attestation({
-            registry: address(registry),
-            credentialGroupId: credentialGroupId1,
-            idHash: idHash1,
-            semaphoreIdentityCommitment: commitment1
-        });
-        
-        (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(
-            tlsnVerifierPrivateKey,
-            keccak256(abi.encode(message1)).toEthSignedMessageHash()
-        );
-        
-        registry.joinGroup(message1, v1, r1, s1);
-        
-        // Create proofs
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
-        
-        uint256[] memory commitments1 = new uint256[](1);
-        commitments1[0] = commitment1;
-        
-        (
-            uint256 merkleTreeDepth1,
-            uint256 merkleTreeRoot1,
-            uint256 nullifier1,
-            uint256 messageHash1,
-            uint256[8] memory points1
-        ) = TestUtils.semaphoreProof(commitmentKey1, scope, commitments1);
-        
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId1,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: merkleTreeDepth1,
-                merkleTreeRoot: merkleTreeRoot1,
-                nullifier: nullifier1,
-                message: messageHash1,
-                scope: scope,
-                points: points1
-            })
-        });
-        
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: credentialGroupId2,
+            appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
                 merkleTreeRoot: 0,
@@ -666,8 +746,1256 @@ contract CredentialRegistryTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        
-        vm.expectRevert("Credential group is inactive");
-        registry.score(0, proofs);
+
+        vm.expectRevert("BID::no semaphore group");
+        vm.prank(prover);
+        registry.submitProof(0, proof);
+    }
+
+    // --- Score tests ---
+
+    function testScoreUsesDefaultScorer() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        uint256 score1 = 100;
+        uint256 score2 = 200;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+        scorer.setScore(credentialGroupId1, score1);
+        scorer.setScore(credentialGroupId2, score2);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
+
+        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        uint256 totalScore = registry.submitProofs(0, proofs);
+        assertEq(totalScore, score1 + score2);
+    }
+
+    function testScoreUsesCustomScorer() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        // Set default scores
+        scorer.setScore(credentialGroupId1, 100);
+        scorer.setScore(credentialGroupId2, 200);
+
+        // Create a custom scorer with different scores
+        MockScorer customScorer = new MockScorer();
+        customScorer.setScore(credentialGroupId1, 999);
+        customScorer.setScore(credentialGroupId2, 1);
+
+        // Set custom scorer on the default app
+        registry.setAppScorer(DEFAULT_APP_ID, address(customScorer));
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
+
+        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        uint256 totalScore = registry.submitProofs(0, proofs);
+        assertEq(totalScore, 999 + 1);
+    }
+
+    function testScoreFailOnInactive() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        scorer.setScore(credentialGroupId1, 100);
+        // Don't create credentialGroupId2, it will be inactive
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
+
+        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId2,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert("BID::credential group inactive");
+        registry.submitProofs(0, proofs);
+    }
+
+    // --- Recovery timelock tests ---
+
+    function testSetAppRecoveryTimelock() public {
+        vm.expectEmit(true, false, false, true);
+        emit AppRecoveryTimelockSet(DEFAULT_APP_ID, 1 days);
+
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        (, uint256 timelock,,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(timelock, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockNotAdmin() public {
+        address notAdmin = makeAddr("not-admin");
+        vm.prank(notAdmin);
+        vm.expectRevert("BID::not app admin");
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockAppNotActive() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+
+        vm.expectRevert("BID::not app admin");
+        registry.setAppRecoveryTimelock(999, 1 days);
+    }
+
+    function testSetAppRecoveryTimelockZero() public {
+        // First enable recovery
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+        (, uint256 timelock,,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(timelock, 1 days);
+
+        // Disable recovery by setting to 0
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 0);
+        (, timelock,,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(timelock, 0);
+    }
+
+    // --- Initiate recovery tests ---
+
+    function _initiateRecovery(
+        uint256 credentialGroupId,
+        uint256 appId,
+        bytes32 credentialId,
+        uint256 newCommitment,
+        uint256[] memory siblings
+    ) internal {
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, appId, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        registry.initiateRecovery(att, v, r, s, siblings);
+    }
+
+    function testInitiateRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectEmit(true, true, false, true);
+        emit RecoveryInitiated(
+            registrationHash, credentialGroupId, oldCommitment, newCommitment, block.timestamp + 1 days
+        );
+
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        (,,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        assertEq(req.credentialGroupId, credentialGroupId);
+        assertEq(req.appId, DEFAULT_APP_ID);
+        assertEq(req.newCommitment, newCommitment);
+        assertEq(req.executeAfter, block.timestamp + 1 days);
+    }
+
+    function testInitiateRecoveryWithBytes() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256[] memory siblings = new uint256[](0);
+        registry.initiateRecovery(att, signature, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (,,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        assertEq(req.newCommitment, newCommitment);
+    }
+
+    function testInitiateRecoveryNotRegistered() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("BID::not registered");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+    }
+
+    function testInitiateRecoveryAlreadyPending() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment1 = TestUtils.semaphoreCommitment(67890);
+        uint256 newCommitment2 = TestUtils.semaphoreCommitment(11111);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment1, siblings);
+
+        vm.expectRevert("BID::recovery already pending");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment2, siblings);
+    }
+
+    function testInitiateRecoveryNotEnabled() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("BID::recovery disabled");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+    }
+
+    // --- Execute recovery tests ---
+
+    function testExecuteRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        vm.warp(block.timestamp + 1 days);
+
+        vm.expectEmit(true, false, false, true);
+        emit RecoveryExecuted(registrationHash, newCommitment);
+
+        registry.executeRecovery(registrationHash);
+
+        (,, uint256 commitment,,, ICredentialRegistry.RecoveryRequest memory req) =
+            registry.credentials(registrationHash);
+        assertEq(commitment, newCommitment);
+        assertEq(req.executeAfter, 0);
+    }
+
+    function testExecuteRecoveryTimelockNotExpired() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        vm.warp(block.timestamp + 1 days - 1);
+
+        vm.expectRevert("BID::recovery timelock not expired");
+        registry.executeRecovery(registrationHash);
+    }
+
+    function testExecuteRecoveryNoPending() public {
+        bytes32 fakeHash = keccak256("no-such-recovery");
+
+        vm.expectRevert("BID::no pending recovery");
+        registry.executeRecovery(fakeHash);
+    }
+
+    // --- Credential expiry tests ---
+
+    function testCreateCredentialGroupWithValidityDuration() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupCreated(
+            credentialGroupId,
+            ICredentialRegistry.CredentialGroup(ICredentialRegistry.CredentialGroupStatus.ACTIVE, validityDuration, 0)
+        );
+
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        (ICredentialRegistry.CredentialGroupStatus status, uint256 duration,) =
+            registry.credentialGroups(credentialGroupId);
+        assertEq(uint256(status), uint256(ICredentialRegistry.CredentialGroupStatus.ACTIVE));
+        assertEq(duration, validityDuration);
+    }
+
+    function testRegisterCredentialSetsExpiry() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (,,, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertEq(expiresAt, block.timestamp + validityDuration);
+    }
+
+    function testRegisterCredentialNoExpiryWhenDurationZero() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (,,, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertEq(expiresAt, 0);
+    }
+
+    function testRemoveExpiredCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry
+        vm.warp(block.timestamp + validityDuration);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectEmit(true, true, false, true);
+        emit CredentialExpired(credentialGroupId, DEFAULT_APP_ID, credentialId, registrationHash);
+
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Verify expired flag is set (registered and commitment persist for nullifier continuity)
+        (bool registered, bool expired, uint256 storedCommitment,,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertTrue(expired);
+        assertEq(storedCommitment, commitment);
+    }
+
+    function testRemoveExpiredCredentialTooEarly() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Warp to just before expiry
+        vm.warp(block.timestamp + validityDuration - 1);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("BID::not yet expired");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRemoveExpiredCredentialNotRegistered() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 30 days, 0);
+
+        bytes32 credentialId = keccak256("nonexistent");
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("BID::not registered");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRemoveExpiredCredentialNoExpiry() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        vm.expectRevert("BID::no expiry set");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRenewAfterExpiryWithSameCommitment() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Renew with the same commitment succeeds
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertEq(storedCommitment, commitment);
+        assertEq(expiresAt, block.timestamp + validityDuration);
+    }
+
+    function testRenewAfterExpiryRequiresSameCommitment() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Renew with a different commitment reverts
+        vm.expectRevert("BID::commitment mismatch");
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testRecoveryUpdatesPersistedCommitment() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Recovery: replace oldCommitment with newCommitment
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+        vm.warp(block.timestamp + 1 days);
+        registry.executeRecovery(registrationHash);
+
+        // After recovery, registeredCommitments should point to the new commitment.
+        // Combined with testRenewAfterExpiryRequiresSameCommitment (which verifies
+        // that registeredCommitments survives expiry and blocks different commitments),
+        // this ensures renewal after recovery+expiry must use the recovered commitment.
+        (,, uint256 storedCommitment,,,) = registry.credentials(registrationHash);
+        assertEq(storedCommitment, newCommitment);
+    }
+
+    // --- Expiry + Recovery interaction edge cases ---
+
+    function testInitiateRecoveryOnExpiredButNotRemovedCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Warp past expiry but don't call removeExpiredCredential
+        vm.warp(block.timestamp + validityDuration);
+
+        // initiateRecovery still succeeds — credentialRegistered is still true
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (,,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+        assertEq(req.newCommitment, newCommitment);
+    }
+
+    function testInitiateRecoveryOnExpiredAndRemovedCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Expire and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // expired is true, but registered and commitment persist
+        {
+            (bool registered, bool expired,,,,) = registry.credentials(registrationHash);
+            assertTrue(registered);
+            assertTrue(expired);
+        }
+
+        // Recovery succeeds — skips Semaphore removal (already removed)
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        {
+            (,,,,, ICredentialRegistry.RecoveryRequest memory req) = registry.credentials(registrationHash);
+            assertEq(req.newCommitment, newCommitment);
+        }
+
+        // Execute recovery after timelock — re-registers the credential
+        vm.warp(block.timestamp + 1 days);
+        registry.executeRecovery(registrationHash);
+
+        // Credential is recovered with new commitment; expired flag cleared
+        (bool registered, bool expired, uint256 storedCommitment,,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertFalse(expired);
+        assertEq(storedCommitment, newCommitment);
+    }
+
+    function testRemoveExpiredCredentialAfterRecoveryInitiated() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Warp past expiry, then initiate recovery (removes commitment from Semaphore)
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // removeExpiredCredential tries to remove the same commitment again from Semaphore — reverts
+        vm.expectRevert("BID::recovery pending");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testExecuteRecoveryAfterExpiry() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Initiate recovery before expiry
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // Warp past both recovery timelock AND credential expiry
+        vm.warp(block.timestamp + validityDuration);
+
+        // executeRecovery still succeeds — it doesn't check expiry
+        registry.executeRecovery(registrationHash);
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertEq(storedCommitment, newCommitment);
+        assertTrue(registered);
+
+        // Recovery does NOT reset expiry — credential is still expired
+        assertTrue(block.timestamp >= expiresAt);
+    }
+
+    function testDoubleRecoveryOnExpiredCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Warp past expiry, initiate recovery
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
+
+        // Cannot initiate a second recovery while one is pending
+        vm.expectRevert("BID::recovery already pending");
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
+    }
+
+    function testExpiredCredentialPreservesCommitmentForRenewal() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(11111);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Expire and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // expired is set but registered and commitment persist
+        (bool registered, bool expired, uint256 storedCommitment,,, ICredentialRegistry.RecoveryRequest memory req) =
+            registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertTrue(expired);
+        assertEq(storedCommitment, commitment);
+        assertEq(req.executeAfter, 0);
+    }
+
+    // --- Renewal tests ---
+
+    function testRenewCredential() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Renew
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectEmit(true, true, true, false);
+        emit CredentialRenewed(credentialGroupId, DEFAULT_APP_ID, commitment, bytes32(0), bytes32(0), address(0), 0);
+
+        registry.renewCredential(att, v, r, s);
+
+        (bool registered,, uint256 storedCommitment, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertEq(storedCommitment, commitment);
+        assertEq(expiresAt, block.timestamp + validityDuration);
+    }
+
+    function testRenewCredentialWithBytes() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Renew with bytes signature
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        registry.renewCredential(att, signature);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+        (bool registered,,,,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+    }
+
+    function testRenewCredentialEarlyRenewal() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        (,,, uint256 originalExpiry,,) = registry.credentials(registrationHash);
+
+        // Warp to halfway through validity (not expired yet)
+        vm.warp(block.timestamp + 15 days);
+
+        // Renew early — should reset expiry from current timestamp
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        (bool registered,,, uint256 newExpiry,,) = registry.credentials(registrationHash);
+        assertEq(newExpiry, block.timestamp + validityDuration);
+        assertTrue(newExpiry > originalExpiry);
+        assertTrue(registered);
+    }
+
+    function testRenewCredentialExpiredButNotRemoved() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Warp past expiry but don't remove
+        vm.warp(block.timestamp + validityDuration);
+        {
+            (bool registered,,,,,) = registry.credentials(registrationHash);
+            assertTrue(registered);
+        }
+
+        // Renew — credential is still in Semaphore, just reset expiry
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        (bool registered,,, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertEq(expiresAt, block.timestamp + validityDuration);
+    }
+
+    function testRenewCredentialNotPreviouslyRegistered() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 30 days, 0);
+
+        bytes32 credentialId = keccak256("never-registered");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        vm.expectRevert("BID::not registered");
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+    }
+
+    function testRenewCredentialDifferentCommitment() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 30 days, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
+
+        vm.expectRevert("BID::commitment mismatch");
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testRenewCredentialRecoveryPending() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 30 days, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // Cannot renew while recovery is pending
+        vm.expectRevert("BID::recovery pending");
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+    }
+
+    function testRegisterCredentialAfterExpiryFails() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Warp past expiry and remove
+        vm.warp(block.timestamp + validityDuration);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+
+        // registerCredential now rejects previously-registered credentials
+        vm.expectRevert("BID::already registered");
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+    }
+
+    function testRenewCredentialValidityDurationChangedToZero() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        // Confirm expiry was set
+        {
+            (,,, uint256 expiresAt,,) = registry.credentials(registrationHash);
+            assertTrue(expiresAt > 0);
+        }
+
+        // Owner changes validity duration to 0 (no expiry)
+        registry.setCredentialGroupValidityDuration(credentialGroupId, 0);
+
+        // Renew — expiry should be cleared
+        _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        (,,, uint256 expiresAt,,) = registry.credentials(registrationHash);
+        assertEq(expiresAt, 0);
+    }
+
+    // --- Credential group validity duration tests ---
+
+    function testSetCredentialGroupValidityDuration() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupValidityDurationSet(credentialGroupId, 7 days);
+
+        registry.setCredentialGroupValidityDuration(credentialGroupId, 7 days);
+
+        (, uint256 duration,) = registry.credentialGroups(credentialGroupId);
+        assertEq(duration, 7 days);
+    }
+
+    function testSetCredentialGroupValidityDurationOnlyOwner() public {
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setCredentialGroupValidityDuration(credentialGroupId, 7 days);
+    }
+
+    function testSetCredentialGroupValidityDurationNonExistent() public {
+        vm.expectRevert("BID::credential group not found");
+        registry.setCredentialGroupValidityDuration(999, 7 days);
+    }
+
+    // --- Attestation validity duration tests ---
+
+    function testSetAttestationValidityDuration() public {
+        assertEq(registry.attestationValidityDuration(), 30 minutes);
+
+        vm.expectEmit(false, false, false, true);
+        emit AttestationValidityDurationSet(1 hours);
+
+        registry.setAttestationValidityDuration(1 hours);
+        assertEq(registry.attestationValidityDuration(), 1 hours);
+    }
+
+    function testSetAttestationValidityDurationOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setAttestationValidityDuration(1 hours);
+    }
+
+    function testSetAttestationValidityDurationZero() public {
+        vm.expectRevert("BID::zero duration");
+        registry.setAttestationValidityDuration(0);
+    }
+
+    function testRegisterCredentialExpiredAttestation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        // Warp past attestation validity (default 30 minutes)
+        vm.warp(block.timestamp + 31 minutes);
+
+        vm.expectRevert("BID::attestation expired");
+        registry.registerCredential(att, v, r, s);
+    }
+
+    function testRenewCredentialExpiredAttestation() public {
+        uint256 credentialGroupId = 10;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Create renewal attestation, then warp past its validity
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.warp(block.timestamp + 31 minutes);
+
+        vm.expectRevert("BID::attestation expired");
+        registry.renewCredential(att, v, r, s);
+    }
+
+    function testInitiateRecoveryExpiredAttestation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Create recovery attestation, then warp past its validity
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.warp(block.timestamp + 31 minutes);
+
+        uint256[] memory siblings = new uint256[](0);
+        vm.expectRevert("BID::attestation expired");
+        registry.initiateRecovery(att, v, r, s, siblings);
+    }
+
+    // --- Family enforcement tests ---
+
+    function testFamilyEnforcementBlocksSiblingGroup() public {
+        // Create family groups: group 1 and 2 in family 1
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // Register in group 1 succeeds
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Register in group 2 (same family) with same credentialId reverts — same registration hash
+        vm.expectRevert("BID::already registered");
+        _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testFamilyEnforcementAllowsDifferentFamilies() public {
+        // Group 1 in family 1, group 4 in family 2
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(4, 30 days, 2);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // Register in family 1
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Register in family 2 — different family, succeeds
+        _registerCredential(4, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testStandaloneGroupsNoFamilyConstraint() public {
+        // Both standalone (family 0) — no family constraint
+        registry.createCredentialGroup(10, 180 days, 0);
+        registry.createCredentialGroup(11, 180 days, 0);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // Register in group 10
+        _registerCredential(10, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Register in group 11 — standalone, no family constraint, succeeds
+        _registerCredential(11, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testFamilyEnforcementExpiredButNotRemovedBlocks() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
+
+        // Warp past expiry but don't remove — cred.registered is still true
+        vm.warp(block.timestamp + 30 days);
+
+        // Register in sibling group still fails (registered flag persists)
+        vm.expectRevert("BID::already registered");
+        _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment2);
+    }
+
+    function testFamilyGroupChangeViaRecovery() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Family hash: keccak256(registry, familyId=1, 0, credentialId, appId)
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(1), uint256(0), credentialId, DEFAULT_APP_ID));
+
+        // Capture original expiry
+        (,,, uint256 originalExpiresAt,,) = registry.credentials(registrationHash);
+        assertTrue(originalExpiresAt > 0);
+
+        // Initiate recovery targeting group 2 (same family) — allowed
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(2, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        // Execute recovery after timelock
+        vm.warp(block.timestamp + 1 days);
+        registry.executeRecovery(registrationHash);
+
+        // Verify credentialGroupId updated to group 2
+        (bool registered,,, uint256 expiresAt, uint256 credentialGroupId,) = registry.credentials(registrationHash);
+        assertTrue(registered);
+        assertEq(credentialGroupId, 2);
+        // Recovery does NOT reset expiry — expiresAt unchanged from original registration
+        assertEq(expiresAt, originalExpiresAt);
+    }
+
+    function testEarlyRenewalWithWrongGroupReverts() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Try to renew with group 2 instead of group 1 — reverts
+        vm.expectRevert("BID::group mismatch");
+        _renewCredential(2, credentialId, DEFAULT_APP_ID, commitment);
+    }
+
+    function testRecoveryRequiresMatchingGroupOrFamily() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(4, 30 days, 2);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        // Try recovery targeting group 4 (family 2, not family 1) — reverts.
+        // Different families produce different registration hashes, so the credential
+        // is not found under the new hash.
+        uint256[] memory siblings = new uint256[](0);
+        vm.expectRevert("BID::not registered");
+        _initiateRecovery(4, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+    }
+
+    function testSameCredentialIdDifferentAppsNoFamilyConflict() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+
+        uint256 app2 = registry.registerApp(0);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+
+        // Same credentialId + same group, different apps — succeeds (appId is in the hash)
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
+        _registerCredential(1, credentialId, app2, commitment2);
+    }
+
+    function testSetCredentialGroupFamily() public {
+        registry.createCredentialGroup(1, 30 days, 0);
+
+        // Initially standalone
+        (,, uint256 familyId) = registry.credentialGroups(1);
+        assertEq(familyId, 0);
+
+        // Set family
+        registry.setCredentialGroupFamily(1, 5);
+
+        (,, uint256 newFamilyId) = registry.credentialGroups(1);
+        assertEq(newFamilyId, 5);
+    }
+
+    function testSetCredentialGroupFamilyOnlyOwner() public {
+        registry.createCredentialGroup(1, 30 days, 0);
+
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setCredentialGroupFamily(1, 5);
+    }
+
+    function testSetCredentialGroupFamilyNonExistent() public {
+        vm.expectRevert("BID::credential group not found");
+        registry.setCredentialGroupFamily(999, 5);
+    }
+
+    function testRemoveExpiredCredentialGroupMismatch() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
+
+        vm.warp(block.timestamp + 30 days);
+
+        // Pass wrong credentialGroupId (2 instead of 1) — group mismatch
+        uint256[] memory siblings = new uint256[](0);
+        vm.expectRevert("BID::group mismatch");
+        registry.removeExpiredCredential(2, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    function testRenewalAfterExpiryRestoresFamilyBlock() public {
+        registry.createCredentialGroup(1, 30 days, 1);
+        registry.createCredentialGroup(2, 60 days, 1);
+
+        bytes32 credentialId = keccak256("same-user");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Expire and remove
+        vm.warp(block.timestamp + 30 days);
+        uint256[] memory siblings = new uint256[](0);
+        registry.removeExpiredCredential(1, credentialId, DEFAULT_APP_ID, siblings);
+
+        // Renew in same group
+        _renewCredential(1, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Sibling group is still blocked (registration hash is the same)
+        vm.expectRevert("BID::already registered");
+        _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment);
     }
 }
