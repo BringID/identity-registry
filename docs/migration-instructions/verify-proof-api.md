@@ -89,13 +89,13 @@ If the API currently only returns `{ verified: boolean }` without scores, this c
 
 **File:** `src/configs/chain-registries.ts`
 
-Update the registry whitelist. The addresses below are the current **Base Sepolia** (chain 84532) deployment. **Base Mainnet addresses are TBD** — do not update the mainnet entry until new mainnet contracts are deployed.
+Update the registry whitelist. Contract addresses are identical on both chains (same deployer, same nonce).
 
 ```diff
   export const chainRegistries: Record<number, string[]> = {
 -   84532: ['0x0b2Ab187a6FD2d2F05fACc158611838c284E3a9c'],
 +   84532: ['0x4CeA320D9b08A3a32cfD55360E0fc2137542478d'],
-    8453: ['...']  // Base Mainnet — TBD
++   8453: ['0x4CeA320D9b08A3a32cfD55360E0fc2137542478d'],
   }
 ```
 

@@ -2,7 +2,19 @@
 
 Privacy-preserving credential system built with Semaphore zero-knowledge proofs. Users register credentials via verifier-signed attestations, then prove membership without revealing their identity.
 
-## Deployed Contracts (Base Sepolia — chain ID 84532)
+## Deployed Contracts
+
+Contract addresses are identical on both chains (same deployer, same nonce).
+
+### Base Mainnet (chain ID 8453)
+
+| Contract | Address |
+|---|---|
+| Semaphore | [`0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D`](https://basescan.org/address/0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D) |
+| CredentialRegistry | [`0x4CeA320D9b08A3a32cfD55360E0fc2137542478d`](https://basescan.org/address/0x4CeA320D9b08A3a32cfD55360E0fc2137542478d) |
+| DefaultScorer | [`0xcE4A14a929FfF47df30216f4C8fa8907825F494F`](https://basescan.org/address/0xcE4A14a929FfF47df30216f4C8fa8907825F494F) |
+
+### Base Sepolia (chain ID 84532)
 
 | Contract | Address |
 |---|---|

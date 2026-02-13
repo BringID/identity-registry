@@ -2,16 +2,19 @@
 
 This guide is for repos that integrate with the BringID CredentialRegistry contracts. It covers deployed addresses, new features, credential groups, default scores, and all ABI breaking changes.
 
-## Deployed Contracts (Base Sepolia — chain ID 84532)
+## Deployed Contracts
 
-| Contract | Address |
-|---|---|
-| Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` |
-| DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` |
+Contract addresses are identical on both chains (same deployer, same nonce).
+
+| Contract | Address | Chains |
+|---|---|---|
+| Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` | mainnet (8453), Sepolia (84532) |
+| CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` | mainnet (8453), Sepolia (84532) |
+| DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` | mainnet (8453), Sepolia (84532) |
 
 Owner / trusted verifier: `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617`
-Additional trusted verifier: `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
+Trusted verifier (mainnet): `0x9186aA65288bFfa67fB58255AeeaFfc4515535d9`
+Additional trusted verifier (Sepolia): `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
 
 ## Credential Groups
 

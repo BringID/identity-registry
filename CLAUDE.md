@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users register credentials via verifier-signed attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; `submitProofs()` validates proofs (consuming nullifiers) and returns the aggregate score.
 
-Target chain: Base (chain ID 84532). Built with Foundry and Solidity ^0.8.23.
+Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). Built with Foundry and Solidity ^0.8.23.
 
 ## Build & Test Commands
 
@@ -43,7 +43,9 @@ make deploy-idcard-local  # IdCard contract locally
 make deploy-idcard        # IdCard contract to Base
 ```
 
-## Deployed Contracts (Base Sepolia — chain ID 84532)
+## Deployed Contracts
+
+Contract addresses are identical on both chains (same deployer, same nonce).
 
 | Contract | Address |
 |---|---|
@@ -51,8 +53,11 @@ make deploy-idcard        # IdCard contract to Base
 | CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` |
 | DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` |
 
+**Chains:** Base mainnet (8453), Base Sepolia (84532)
+
 Owner / trusted verifier: `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617`
-Additional trusted verifier: `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
+Additional trusted verifier (Sepolia): `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
+Trusted verifier (mainnet): `0x9186aA65288bFfa67fB58255AeeaFfc4515535d9`
 
 ### Registered Apps (Base Sepolia)
 

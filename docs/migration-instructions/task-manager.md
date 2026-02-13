@@ -138,9 +138,7 @@ Update user-facing error messages:
 ### 9. Environment Variables
 
 Add or update:
-- `REGISTRY_ADDRESS` — new CredentialRegistry address (current **Base Sepolia** deployment): `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d`
-
-> **Note:** This is the current Base Sepolia (chain 84532) deployment. Base Mainnet addresses are TBD.
+- `REGISTRY_ADDRESS` — new CredentialRegistry address: `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` (same on both Base mainnet 8453 and Sepolia 84532)
 
 ## No Changes Required
 
