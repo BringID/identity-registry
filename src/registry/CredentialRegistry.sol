@@ -258,7 +258,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
-    function submitProof(uint256 context_, CredentialGroupProof memory proof_) public {
+    function submitProof(uint256 context_, CredentialGroupProof memory proof_) public returns (uint256 _score) {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "BID::credential group inactive"
@@ -273,6 +273,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE.validateProof(semaphoreGroupId, proof_.semaphoreProof);
 
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, proof_.semaphoreProof.nullifier);
+
+        _score = IScorer(apps[proof_.appId].scorer).getScore(proof_.credentialGroupId);
     }
 
     /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
@@ -285,11 +287,8 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @return _score The total score across all validated credential groups.
     function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public returns (uint256 _score) {
         _score = 0;
-        CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
-            _proof = proofs_[i];
-            _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
-            submitProof(context_, _proof);
+            _score += submitProof(context_, proofs_[i]);
         }
     }
 

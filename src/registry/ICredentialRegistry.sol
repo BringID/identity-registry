@@ -60,7 +60,7 @@ interface ICredentialRegistry {
         uint256 issuedAt;
     }
 
-    function submitProof(uint256 context_, CredentialGroupProof calldata proof) external;
+    function submitProof(uint256 context_, CredentialGroupProof calldata proof) external returns (uint256);
     function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
     function verifyProof(uint256 context_, CredentialGroupProof calldata proof) external view returns (bool);
     function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (bool);
