@@ -94,7 +94,7 @@ Update the registry whitelist. The addresses below are the current **Base Sepoli
 ```diff
   export const chainRegistries: Record<number, string[]> = {
 -   84532: ['0x0b2Ab187a6FD2d2F05fACc158611838c284E3a9c'],
-+   84532: ['0x78Ce003ff79557A44eae862377a00F66df0557B2'],
++   84532: ['0x4CeA320D9b08A3a32cfD55360E0fc2137542478d'],
     8453: ['...']  // Base Mainnet — TBD
   }
 ```

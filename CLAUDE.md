@@ -48,17 +48,17 @@ make deploy-idcard        # IdCard contract to Base
 | Contract | Address |
 |---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0x78Ce003ff79557A44eae862377a00F66df0557B2` |
-| DefaultScorer | `0x68a3CA701c6f7737395561E000B5cCF4ECa5185A` |
+| CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` |
+| DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` |
 
-Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
+Owner / trusted verifier: `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617`
 Additional trusted verifier: `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
 
 ### Registered Apps (Base Sepolia)
 
 | App ID | Admin | Recovery Timelock |
 |--------|-------|-------------------|
-| 1 | `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452` | 0 (disabled) |
+| 1 | `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617` | 0 (disabled) |
 
 ### Semaphore Identity Derivation
 
@@ -97,9 +97,9 @@ identity = new Identity(seed)
 
 ### Core contracts (`src/registry/`)
 
-- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (metadata only — status). Per-app Semaphore groups are created lazily on first credential registration for each (credentialGroup, app) pair via `appSemaphoreGroups` mapping. Credential lifecycle has three distinct operations: `registerCredential()` for first-time registration with a verifier-signed attestation; `renewCredential()` for renewing previously-registered credentials (same identity commitment, resets validity duration); and `initiateRecovery()` / `executeRecovery()` for timelocked key replacement (changes identity commitment, does NOT update validity duration). Proof API has state-changing and view variants: `submitProof()` / `submitProofs()` consume Semaphore nullifiers (binding proofs to the caller via `scope == keccak256(abi.encode(msg.sender, context))`); `verifyProof()` / `verifyProofs()` are view-only counterparts using Semaphore's `verifyProof()` that don't consume nullifiers; `getScore()` is a view that verifies proofs and returns the aggregate score. Since each app has its own Semaphore group, cross-app proof replay is naturally prevented. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Deploys a `DefaultScorer` in the constructor.
-- **ICredentialRegistry.sol** — Interface with core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
-- **IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`.
+- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (metadata only — status). Per-app Semaphore groups are created lazily on first credential registration for each (credentialGroup, app) pair via `appSemaphoreGroups` mapping. Credential lifecycle has three distinct operations: `registerCredential()` for first-time registration with a verifier-signed attestation; `renewCredential()` for renewing previously-registered credentials (same identity commitment, resets validity duration); and `initiateRecovery()` / `executeRecovery()` for timelocked key replacement (changes identity commitment, does NOT update validity duration). Proof API has state-changing and view variants: `submitProof()` (returns the credential group score) / `submitProofs()` consume Semaphore nullifiers (binding proofs to the caller via `scope == keccak256(abi.encode(msg.sender, context))`); `verifyProof()` / `verifyProofs()` are view-only counterparts using Semaphore's `verifyProof()` that don't consume nullifiers; `getScore()` is a view that verifies proofs and returns the aggregate score. Since each app has its own Semaphore group, cross-app proof replay is naturally prevented. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Deploys a `DefaultScorer` in the constructor.
+- **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
+- **IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`, `getScores(uint256[] credentialGroupIds) → uint256[]`, `getAllScores() → (uint256[], uint256[])`.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
 - **Events.sol** — Event declarations.
 
@@ -126,7 +126,7 @@ identity = new Identity(seed)
 
 ### Scripts (`script/`)
 
-- **Deploy.s.sol** — `DeployDev` (dev with token), `DeployToken`, `Deploy` (production). Require `SEMAPHORE_ADDRESS` env var.
+- **Deploy.s.sol** — `DeployDev` (dev with token), `DeployToken`, `Deploy` (production). Require `SEMAPHORE_ADDRESS` env var. Accepts optional `TRUSTED_VERIFIER` env var to add an additional trusted verifier on deploy.
 - **DeployLocal.s.sol** — Deploys SemaphoreVerifier, Semaphore, and CredentialRegistry for local e2e testing.
 - **CredentialGroups.s.sol** — Batch-creates credential groups and sets scores on DefaultScorer.
 - **RegisterApps.s.sol** — Batch-registers apps (public, auto-increment).

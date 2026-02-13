@@ -7,8 +7,8 @@ Privacy-preserving credential system built with Semaphore zero-knowledge proofs.
 | Contract | Address |
 |---|---|
 | Semaphore | [`0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D`](https://sepolia.basescan.org/address/0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D) |
-| CredentialRegistry | [`0x78Ce003ff79557A44eae862377a00F66df0557B2`](https://sepolia.basescan.org/address/0x78Ce003ff79557A44eae862377a00F66df0557B2) |
-| DefaultScorer | [`0x68a3CA701c6f7737395561E000B5cCF4ECa5185A`](https://sepolia.basescan.org/address/0x68a3CA701c6f7737395561E000B5cCF4ECa5185A) |
+| CredentialRegistry | [`0x4CeA320D9b08A3a32cfD55360E0fc2137542478d`](https://sepolia.basescan.org/address/0x4CeA320D9b08A3a32cfD55360E0fc2137542478d) |
+| DefaultScorer | [`0xcE4A14a929FfF47df30216f4C8fa8907825F494F`](https://sepolia.basescan.org/address/0xcE4A14a929FfF47df30216f4C8fa8907825F494F) |
 
 ### Credential Groups
 

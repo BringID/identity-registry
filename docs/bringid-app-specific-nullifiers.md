@@ -91,7 +91,7 @@ Each credential proof is a standard Semaphore ZK proof against a per-app group:
 
 | Function | Mutates state? | Returns |
 |---|---|---|
-| `submitProof(context, proof)` | Yes — consumes nullifier | — |
+| `submitProof(context, proof)` | Yes — consumes nullifier | score |
 | `submitProofs(context, proofs)` | Yes — consumes nullifiers | aggregate score |
 | `verifyProof(context, proof)` | No | bool |
 | `verifyProofs(context, proofs)` | No | bool |

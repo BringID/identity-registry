@@ -49,6 +49,7 @@ contract Deploy is Script {
     function run() public {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
+        address trustedVerifier = vm.envOr("TRUSTED_VERIFIER", deployer);
 
         vm.startBroadcast(deployerKey);
         Semaphore semaphore;
@@ -57,10 +58,11 @@ contract Deploy is Script {
         } else {
             revert("SEMAPHORE_ADDRESS should be provided");
         }
-        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), deployer);
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier);
         vm.stopBroadcast();
 
         console.log("Deployer:", deployer);
+        console.log("Trusted verifier:", trustedVerifier);
         console.log("Semaphore:", address(semaphore));
         console.log("Registry:", address(registry));
         console.log("DefaultScorer:", registry.defaultScorer());

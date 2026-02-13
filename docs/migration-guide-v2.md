@@ -7,10 +7,11 @@ This guide is for repos that integrate with the BringID CredentialRegistry contr
 | Contract | Address |
 |---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
-| CredentialRegistry | `0x78Ce003ff79557A44eae862377a00F66df0557B2` |
-| DefaultScorer | `0x68a3CA701c6f7737395561E000B5cCF4ECa5185A` |
+| CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` |
+| DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` |
 
-Owner / trusted verifier: `0xc7308C53B6DD25180EcE79651Bf0b1Fd16e64452`
+Owner / trusted verifier: `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617`
+Additional trusted verifier: `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
 
 ## Credential Groups
 
@@ -171,7 +172,7 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 | v1 | v2 | Notes |
 |---|---|---|
 | `joinGroup(attestation, signature)` | `registerCredential(attestation, signature)` | Attestation struct now includes `appId` and `credentialId` (was `idHash`) |
-| `validateProof(context, proof)` | `submitProof(context, proof)` | State-changing, consumes nullifier |
+| `validateProof(context, proof)` | `submitProof(context, proof)` | State-changing, consumes nullifier, returns score |
 | `score(context, proofs)` | `submitProofs(context, proofs)` | State-changing, consumes nullifiers, returns aggregate score |
 | `verifyProof(context, proof)` (internal) | `verifyProof(context, proof)` | Now **public view**, does not consume nullifier |
 | `credentialGroupScore(id)` | Removed | Use `DefaultScorer.getScore(id)` or app's custom scorer |
@@ -215,7 +216,7 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 | Contract | Description |
 |---|---|
 | `DefaultScorer.sol` | Global scores per credential group. Implements `IScorer`. Owner-only `setScore()` / `setScores()`. Views: `getScore()`, `getScores()`, `getAllScores()`. |
-| `IScorer.sol` | Interface: `getScore(uint256 credentialGroupId) → uint256` |
+| `IScorer.sol` | Interface: `getScore(uint256) → uint256`, `getScores(uint256[]) → uint256[]`, `getAllScores() → (uint256[], uint256[])` |
 
 ### Constructor change
 
