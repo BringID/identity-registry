@@ -41,6 +41,14 @@ Read-only from the dashboard's perspective (only BringID owner can write):
 | `getScores(uint256[] credentialGroupIds)` | View | Scores for multiple groups. |
 | `getAllScores()` | View | All group IDs + scores. |
 
+### ScorerFactory (`0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9`)
+
+Deploys DefaultScorer instances owned by the caller. Same address on both chains.
+
+| Function | Access | Description |
+|---|---|---|
+| `create()` | Public | Deploy a new DefaultScorer owned by msg.sender. Returns address. |
+
 ### Custom Scorer (IScorer interface)
 
 Apps can deploy their own scorer implementing `IScorer`:
