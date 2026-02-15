@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {IScorer} from "./IScorer.sol";
+import {IScorer} from "../registry/IScorer.sol";
 import {Ownable} from "openzeppelin/access/Ownable.sol";
 
 /// @title DefaultScorer
-/// @notice Default scoring contract owned by BringID. Stores global scores per credential group.
-///         Apps that don't set a custom scorer use this by default.
+/// @notice Scoring contract that stores scores per credential group.
+///         Used as the global default scorer (owned by BringID) and as app-specific
+///         custom scorers (deployed via ScorerFactory, owned by the app admin).
 contract DefaultScorer is IScorer, Ownable {
     mapping(uint256 credentialGroupId => uint256) public scores;
     uint256[] internal _scoredGroupIds;
+
+    /// @param owner_ The address that will own this scorer.
+    constructor(address owner_) {
+        _transferOwnership(owner_);
+    }
 
     /// @notice Sets the score for a credential group.
     /// @param credentialGroupId_ The credential group ID.

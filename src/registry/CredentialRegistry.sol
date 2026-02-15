@@ -4,7 +4,7 @@ pragma solidity ^0.8.23;
 import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
 import {IScorer} from "./IScorer.sol";
-import {DefaultScorer} from "./DefaultScorer.sol";
+import {DefaultScorer} from "../scoring/DefaultScorer.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
@@ -72,8 +72,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
 
-        DefaultScorer _scorer = new DefaultScorer();
-        _scorer.transferOwnership(msg.sender);
+        DefaultScorer _scorer = new DefaultScorer(msg.sender);
         defaultScorer = address(_scorer);
     }
 
