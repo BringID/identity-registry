@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {CredentialRegistry, ICredentialRegistry} from "../src/registry/CredentialRegistry.sol";
-import {DefaultScorer} from "../src/registry/DefaultScorer.sol";
+import {DefaultScorer} from "../src/scoring/DefaultScorer.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 /// @notice Deploys credential groups and sets default scores per

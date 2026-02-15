@@ -52,6 +52,7 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` |
 | CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` |
 | DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` |
+| ScorerFactory | `0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9` |
 
 **Chains:** Base mainnet (8453), Base Sepolia (84532)
 
