@@ -413,6 +413,17 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit CredentialGroupStatusChanged(credentialGroupId_, CredentialGroupStatus.SUSPENDED);
     }
 
+    /// @notice Reactivates a suspended credential group.
+    /// @param credentialGroupId_ The credential group ID to activate.
+    function activateCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
+        require(
+            credentialGroups[credentialGroupId_].status == CredentialGroupStatus.SUSPENDED,
+            "BID::credential group not suspended"
+        );
+        credentialGroups[credentialGroupId_].status = CredentialGroupStatus.ACTIVE;
+        emit CredentialGroupStatusChanged(credentialGroupId_, CredentialGroupStatus.ACTIVE);
+    }
+
     /// @notice Registers a new app. Caller becomes the app admin.
     /// @dev App IDs are auto-incremented. The app uses the defaultScorer by default.
     /// @param recoveryTimelock_ The recovery timelock duration in seconds (0 to disable).

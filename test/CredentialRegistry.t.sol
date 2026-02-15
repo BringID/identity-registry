@@ -92,6 +92,9 @@ contract CredentialRegistryTest is Test {
         uint256 expiresAt
     );
     event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
+    event CredentialGroupStatusChanged(
+        uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status
+    );
 
     function setUp() public {
         owner = address(this);
@@ -246,6 +249,66 @@ contract CredentialRegistryTest is Test {
     function testCreateCredentialGroupShouldRejectZeroId() public {
         vm.expectRevert();
         registry.createCredentialGroup(0, 0, 0);
+    }
+
+    // --- Credential group suspend / activate tests ---
+
+    function testSuspendCredentialGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupStatusChanged(credentialGroupId, ICredentialRegistry.CredentialGroupStatus.SUSPENDED);
+
+        registry.suspendCredentialGroup(credentialGroupId);
+        assertFalse(registry.credentialGroupIsActive(credentialGroupId));
+    }
+
+    function testSuspendCredentialGroupNotActive() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        vm.expectRevert("BID::credential group not active");
+        registry.suspendCredentialGroup(credentialGroupId);
+    }
+
+    function testSuspendCredentialGroupOnlyOwner() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.suspendCredentialGroup(credentialGroupId);
+    }
+
+    function testActivateCredentialGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        assertFalse(registry.credentialGroupIsActive(credentialGroupId));
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupStatusChanged(credentialGroupId, ICredentialRegistry.CredentialGroupStatus.ACTIVE);
+
+        registry.activateCredentialGroup(credentialGroupId);
+        assertTrue(registry.credentialGroupIsActive(credentialGroupId));
+    }
+
+    function testActivateCredentialGroupNotSuspended() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        vm.expectRevert("BID::credential group not suspended");
+        registry.activateCredentialGroup(credentialGroupId);
+    }
+
+    function testActivateCredentialGroupOnlyOwner() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.activateCredentialGroup(credentialGroupId);
     }
 
     // --- Trusted verifier tests ---
