@@ -11,18 +11,18 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 | Contract | Address |
 |---|---|
 | Semaphore | [`0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D`](https://basescan.org/address/0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D) |
-| CredentialRegistry | [`0x4CeA320D9b08A3a32cfD55360E0fc2137542478d`](https://basescan.org/address/0x4CeA320D9b08A3a32cfD55360E0fc2137542478d) |
-| DefaultScorer | [`0xcE4A14a929FfF47df30216f4C8fa8907825F494F`](https://basescan.org/address/0xcE4A14a929FfF47df30216f4C8fa8907825F494F) |
-| ScorerFactory | [`0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9`](https://basescan.org/address/0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9) |
+| CredentialRegistry | [`0xfd600B14Dc5A145ec9293Fd5768ae10Ccc1E91Fe`](https://basescan.org/address/0xfd600B14Dc5A145ec9293Fd5768ae10Ccc1E91Fe) |
+| DefaultScorer | [`0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345`](https://basescan.org/address/0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345) |
+| ScorerFactory | [`0x05321FAAD6315a04d5024Ee5b175AB1C62a3fd44`](https://basescan.org/address/0x05321FAAD6315a04d5024Ee5b175AB1C62a3fd44) |
 
 ### Base Sepolia (chain ID 84532)
 
 | Contract | Address |
 |---|---|
 | Semaphore | [`0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D`](https://sepolia.basescan.org/address/0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D) |
-| CredentialRegistry | [`0x4CeA320D9b08A3a32cfD55360E0fc2137542478d`](https://sepolia.basescan.org/address/0x4CeA320D9b08A3a32cfD55360E0fc2137542478d) |
-| DefaultScorer | [`0xcE4A14a929FfF47df30216f4C8fa8907825F494F`](https://sepolia.basescan.org/address/0xcE4A14a929FfF47df30216f4C8fa8907825F494F) |
-| ScorerFactory | [`0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9`](https://sepolia.basescan.org/address/0x7cE2d6AdA1a9ba7B03b1F6d0C84EC01c3005cCa9) |
+| CredentialRegistry | [`0xfd600B14Dc5A145ec9293Fd5768ae10Ccc1E91Fe`](https://sepolia.basescan.org/address/0xfd600B14Dc5A145ec9293Fd5768ae10Ccc1E91Fe) |
+| DefaultScorer | [`0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345`](https://sepolia.basescan.org/address/0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345) |
+| ScorerFactory | [`0x05321FAAD6315a04d5024Ee5b175AB1C62a3fd44`](https://sepolia.basescan.org/address/0x05321FAAD6315a04d5024Ee5b175AB1C62a3fd44) |
 
 ### Credential Groups
 
