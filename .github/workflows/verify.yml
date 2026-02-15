@@ -59,13 +59,20 @@ jobs:
           echo "address=$SCORER" >> "$GITHUB_OUTPUT"
           echo "DefaultScorer address: $SCORER"
 
+      - name: Get DefaultScorer owner
+        id: scorer_owner
+        run: |
+          OWNER=$(cast call ${{ steps.scorer.outputs.address }} "owner()(address)" --rpc-url ${{ inputs.chain_id == '84532' && 'https://sepolia.base.org' || 'https://mainnet.base.org' }})
+          echo "address=$OWNER" >> "$GITHUB_OUTPUT"
+
       - name: Verify DefaultScorer
         env:
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
         run: |
           forge verify-contract \
             ${{ steps.scorer.outputs.address }} \
-            src/registry/DefaultScorer.sol:DefaultScorer \
+            src/scoring/DefaultScorer.sol:DefaultScorer \
             --chain ${{ inputs.chain_id }} \
+            --constructor-args $(cast abi-encode "constructor(address)" "${{ steps.scorer_owner.outputs.address }}") \
             --etherscan-api-key "$ETHERSCAN_API_KEY" \
             --watch

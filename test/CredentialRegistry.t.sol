@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
 import {IScorer} from "../src/registry/IScorer.sol";
-import {DefaultScorer} from "../src/registry/DefaultScorer.sol";
+import {DefaultScorer} from "../src/scoring/DefaultScorer.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
