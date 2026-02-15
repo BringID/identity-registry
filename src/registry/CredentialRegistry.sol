@@ -71,6 +71,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(trustedVerifier_ != address(0), "BID::invalid trusted verifier");
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
+        emit TrustedVerifierUpdated(trustedVerifier_, true);
 
         DefaultScorer _scorer = new DefaultScorer(msg.sender);
         defaultScorer = address(_scorer);
@@ -409,6 +410,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
             "BID::credential group not active"
         );
         credentialGroups[credentialGroupId_].status = CredentialGroupStatus.SUSPENDED;
+        emit CredentialGroupStatusChanged(credentialGroupId_, CredentialGroupStatus.SUSPENDED);
     }
 
     /// @notice Registers a new app. Caller becomes the app admin.
@@ -428,7 +430,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
         require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
         apps[appId_].status = AppStatus.SUSPENDED;
-        emit AppSuspended(appId_);
+        emit AppStatusChanged(appId_, AppStatus.SUSPENDED);
     }
 
     /// @notice Reactivates a suspended app.
@@ -438,7 +440,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
         require(apps[appId_].status == AppStatus.SUSPENDED, "BID::app not suspended");
         apps[appId_].status = AppStatus.ACTIVE;
-        emit AppActivated(appId_);
+        emit AppStatusChanged(appId_, AppStatus.ACTIVE);
     }
 
     /// @notice Adds a trusted verifier that can sign attestations.
@@ -446,7 +448,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function addTrustedVerifier(address verifier_) public onlyOwner {
         require(verifier_ != address(0), "BID::invalid verifier address");
         trustedVerifiers[verifier_] = true;
-        emit TrustedVerifierAdded(verifier_);
+        emit TrustedVerifierUpdated(verifier_, true);
     }
 
     /// @notice Removes a trusted verifier, revoking its ability to sign attestations.
@@ -454,7 +456,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     function removeTrustedVerifier(address verifier_) public onlyOwner {
         require(trustedVerifiers[verifier_], "BID::verifier not trusted");
         trustedVerifiers[verifier_] = false;
-        emit TrustedVerifierRemoved(verifier_);
+        emit TrustedVerifierUpdated(verifier_, false);
     }
 
     /// @notice Sets the recovery timelock duration for an app.

@@ -9,6 +9,8 @@ import {Ownable} from "openzeppelin/access/Ownable.sol";
 ///         Used as the global default scorer (owned by BringID) and as app-specific
 ///         custom scorers (deployed via ScorerFactory, owned by the app admin).
 contract DefaultScorer is IScorer, Ownable {
+    event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
+
     mapping(uint256 credentialGroupId => uint256) public scores;
     uint256[] internal _scoredGroupIds;
 
@@ -23,6 +25,7 @@ contract DefaultScorer is IScorer, Ownable {
     function setScore(uint256 credentialGroupId_, uint256 score_) public onlyOwner {
         if (scores[credentialGroupId_] == 0) _scoredGroupIds.push(credentialGroupId_);
         scores[credentialGroupId_] = score_;
+        emit ScoreSet(credentialGroupId_, score_);
     }
 
     /// @notice Sets scores for multiple credential groups in one call.
@@ -33,6 +36,7 @@ contract DefaultScorer is IScorer, Ownable {
         for (uint256 i; i < credentialGroupIds_.length; ++i) {
             if (scores[credentialGroupIds_[i]] == 0) _scoredGroupIds.push(credentialGroupIds_[i]);
             scores[credentialGroupIds_[i]] = scores_[i];
+            emit ScoreSet(credentialGroupIds_[i], scores_[i]);
         }
     }
 

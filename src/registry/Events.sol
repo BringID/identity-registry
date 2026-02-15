@@ -16,12 +16,10 @@ event CredentialRegistered(
 );
 event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
 
-event TrustedVerifierAdded(address indexed verifier);
-event TrustedVerifierRemoved(address indexed verifier);
+event TrustedVerifierUpdated(address indexed verifier, bool trusted);
 
 event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
-event AppSuspended(uint256 indexed appId);
-event AppActivated(uint256 indexed appId);
+event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
 event AppScorerSet(uint256 indexed appId, address indexed scorer);
 event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
 event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
@@ -51,3 +49,4 @@ event CredentialExpired(
 event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
 event CredentialGroupFamilySet(uint256 indexed credentialGroupId, uint256 familyId);
 event AttestationValidityDurationSet(uint256 duration);
+event CredentialGroupStatusChanged(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status);

@@ -65,10 +65,9 @@ contract CredentialRegistryTest is Test {
         uint256 expiresAt
     );
     event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
-    event TrustedVerifierAdded(address indexed verifier);
-    event TrustedVerifierRemoved(address indexed verifier);
+    event TrustedVerifierUpdated(address indexed verifier, bool trusted);
     event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
-    event AppSuspended(uint256 indexed appId);
+    event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
     event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
     event AppScorerSet(uint256 indexed appId, address indexed scorer);
     event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
@@ -254,8 +253,8 @@ contract CredentialRegistryTest is Test {
     function testAddTrustedVerifier() public {
         address newVerifier = makeAddr("new-verifier");
 
-        vm.expectEmit(true, false, false, false);
-        emit TrustedVerifierAdded(newVerifier);
+        vm.expectEmit(true, false, false, true);
+        emit TrustedVerifierUpdated(newVerifier, true);
 
         registry.addTrustedVerifier(newVerifier);
         assertTrue(registry.trustedVerifiers(newVerifier));
@@ -279,8 +278,8 @@ contract CredentialRegistryTest is Test {
         registry.addTrustedVerifier(newVerifier);
         assertTrue(registry.trustedVerifiers(newVerifier));
 
-        vm.expectEmit(true, false, false, false);
-        emit TrustedVerifierRemoved(newVerifier);
+        vm.expectEmit(true, false, false, true);
+        emit TrustedVerifierUpdated(newVerifier, false);
 
         registry.removeTrustedVerifier(newVerifier);
         assertFalse(registry.trustedVerifiers(newVerifier));
@@ -335,8 +334,8 @@ contract CredentialRegistryTest is Test {
         uint256 appId = registry.registerApp(0);
         assertTrue(registry.appIsActive(appId));
 
-        vm.expectEmit(true, false, false, false);
-        emit AppSuspended(appId);
+        vm.expectEmit(true, false, false, true);
+        emit AppStatusChanged(appId, ICredentialRegistry.AppStatus.SUSPENDED);
 
         registry.suspendApp(appId);
         assertFalse(registry.appIsActive(appId));
@@ -363,8 +362,8 @@ contract CredentialRegistryTest is Test {
         registry.suspendApp(appId);
         assertFalse(registry.appIsActive(appId));
 
-        vm.expectEmit(true, false, false, false);
-        emit AppActivated(appId);
+        vm.expectEmit(true, false, false, true);
+        emit AppStatusChanged(appId, ICredentialRegistry.AppStatus.ACTIVE);
 
         registry.activateApp(appId);
         assertTrue(registry.appIsActive(appId));
