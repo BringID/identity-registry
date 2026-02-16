@@ -8,6 +8,7 @@ import {DefaultScorer} from "../scoring/DefaultScorer.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
+import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
 
 /// @title CredentialRegistry
 /// @notice Main contract for the BringID privacy-preserving credential system.
@@ -20,7 +21,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 /// group, created lazily on first credential registration. Since Semaphore enforces
 /// per-group nullifier uniqueness, separate groups per app naturally prevent cross-app
 /// proof replay.
-contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
+contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /// @notice The Semaphore contract used for group management and ZK proof verification.
@@ -258,7 +259,36 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
-    function submitProof(uint256 context_, CredentialGroupProof memory proof_) public returns (uint256 _score) {
+    function submitProof(uint256 context_, CredentialGroupProof memory proof_)
+        public
+        nonReentrant
+        returns (uint256 _score)
+    {
+        _score = _submitProof(context_, proof_);
+    }
+
+    /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
+    ///         the sum of their scores.
+    /// @dev Iterates over each proof, accumulates the group's score, and calls _submitProof()
+    ///      which performs full Semaphore verification and consumes nullifiers. If any proof
+    ///      is invalid, the entire transaction reverts.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to submit.
+    /// @return _score The total score across all validated credential groups.
+    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_)
+        public
+        nonReentrant
+        returns (uint256 _score)
+    {
+        _score = 0;
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            _score += _submitProof(context_, proofs_[i]);
+        }
+    }
+
+    /// @dev Internal implementation of submitProof. Validates the proof, consumes the
+    ///      Semaphore nullifier, and returns the credential group's score from the app's scorer.
+    function _submitProof(uint256 context_, CredentialGroupProof memory proof_) internal returns (uint256 _score) {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "BID::credential group inactive"
@@ -275,21 +305,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, proof_.semaphoreProof.nullifier);
 
         _score = IScorer(apps[proof_.appId].scorer).getScore(proof_.credentialGroupId);
-    }
-
-    /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
-    ///         the sum of their scores.
-    /// @dev Iterates over each proof, accumulates the group's score, and calls submitProof()
-    ///      which performs full Semaphore verification and consumes nullifiers. If any proof
-    ///      is invalid, the entire transaction reverts.
-    /// @param context_ Application-defined context value (see submitProof).
-    /// @param proofs_ Array of credential group proofs to submit.
-    /// @return _score The total score across all validated credential groups.
-    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public returns (uint256 _score) {
-        _score = 0;
-        for (uint256 i = 0; i < proofs_.length; i++) {
-            _score += submitProof(context_, proofs_[i]);
-        }
     }
 
     /// @notice Verifies a credential group proof without consuming the nullifier.
@@ -486,6 +501,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param newAdmin_ The new admin address.
     function setAppAdmin(uint256 appId_, address newAdmin_) public {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(newAdmin_ != address(0), "BID::invalid admin address");
         address oldAdmin = apps[appId_].admin;
         apps[appId_].admin = newAdmin_;
         emit AppAdminTransferred(appId_, oldAdmin, newAdmin_);
@@ -496,6 +512,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param scorer_ The scorer contract address.
     function setAppScorer(uint256 appId_, address scorer_) public {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(scorer_ != address(0), "BID::invalid scorer address");
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
@@ -696,7 +713,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(attestation_.registry == address(this), "BID::wrong registry address");
         require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
 
-        (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+        signer = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().recover(v, r, s);
         require(trustedVerifiers[signer], "BID::untrusted verifier");
 
         uint256 familyId = credentialGroups[attestation_.credentialGroupId].familyId;
