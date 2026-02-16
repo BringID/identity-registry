@@ -2060,4 +2060,249 @@ contract CredentialRegistryTest is Test {
         vm.expectRevert("BID::already registered");
         _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment);
     }
+
+    // --- View function tests (verifyProof, verifyProofs, getScore) ---
+
+    function testVerifyProofReturnsTrue() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitmentKey = 12345;
+        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
+
+        vm.prank(prover);
+        bool result = registry.verifyProof(0, proof);
+        assertTrue(result);
+    }
+
+    function testVerifyProofReturnsFalseForInactiveGroup() public {
+        uint256 credentialGroupId = 1;
+        // Don't create the credential group — it stays inactive
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.prank(prover);
+        bool result = registry.verifyProof(0, proof);
+        assertFalse(result);
+    }
+
+    function testVerifyProofReturnsFalseForInactiveApp() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 inactiveAppId = 999;
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: inactiveAppId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.prank(prover);
+        bool result = registry.verifyProof(0, proof);
+        assertFalse(result);
+    }
+
+    function testVerifyProofReturnsFalseForScopeMismatch() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitmentKey = 12345;
+        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        address prover = makeAddr("prover");
+        // Generate proof with wrong scope (different address)
+        uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
+
+        vm.prank(prover);
+        bool result = registry.verifyProof(0, proof);
+        assertFalse(result);
+    }
+
+    function testVerifyProofReturnsFalseWhenNoSemaphoreGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        // Don't register any credential — no Semaphore group exists
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.prank(prover);
+        bool result = registry.verifyProof(0, proof);
+        assertFalse(result);
+    }
+
+    function testVerifyProofsReturnsTrueWhenAllValid() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        vm.prank(prover);
+        bool result = registry.verifyProofs(0, proofs);
+        assertTrue(result);
+    }
+
+    function testVerifyProofsReturnsFalseWhenAnyInvalid() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        // Don't create group 2 — it will be inactive
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId2,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.prank(prover);
+        bool result = registry.verifyProofs(0, proofs);
+        assertFalse(result);
+    }
+
+    function testGetScoreReturnsCorrectAggregate() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        uint256 score1 = 100;
+        uint256 score2 = 200;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+        scorer.setScore(credentialGroupId1, score1);
+        scorer.setScore(credentialGroupId2, score2);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        vm.prank(prover);
+        uint256 totalScore = registry.getScore(0, proofs);
+        assertEq(totalScore, score1 + score2);
+    }
+
+    function testGetScoreRevertsOnInvalidProof() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        // Don't create group 2
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+
+        address prover = makeAddr("prover");
+        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId2,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: scope,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.prank(prover);
+        vm.expectRevert("BID::invalid proof");
+        registry.getScore(0, proofs);
+    }
 }
