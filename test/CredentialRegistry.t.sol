@@ -2454,4 +2454,30 @@ contract CredentialRegistryTest is Test {
             registry.executeRecovery(registrationHash);
         }
     }
+
+    // --- Validation error tests ---
+
+    function testSetAppAdminRejectsZeroAddress() public {
+        vm.expectRevert("BID::invalid admin address");
+        registry.setAppAdmin(DEFAULT_APP_ID, address(0));
+    }
+
+    function testSetAppScorerRejectsZeroAddress() public {
+        vm.expectRevert("BID::invalid scorer address");
+        registry.setAppScorer(DEFAULT_APP_ID, address(0));
+    }
+
+    function testRegisterCredentialRejectsZeroCommitment() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, 0);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("BID::invalid commitment");
+        registry.registerCredential(att, v, r, s);
+    }
 }
