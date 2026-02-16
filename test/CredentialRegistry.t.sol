@@ -65,10 +65,9 @@ contract CredentialRegistryTest is Test {
         uint256 expiresAt
     );
     event ProofValidated(uint256 indexed credentialGroupId, uint256 indexed appId, uint256 nullifier);
-    event TrustedVerifierAdded(address indexed verifier);
-    event TrustedVerifierRemoved(address indexed verifier);
+    event TrustedVerifierUpdated(address indexed verifier, bool trusted);
     event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
-    event AppSuspended(uint256 indexed appId);
+    event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
     event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
     event AppScorerSet(uint256 indexed appId, address indexed scorer);
     event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
@@ -93,6 +92,9 @@ contract CredentialRegistryTest is Test {
         uint256 expiresAt
     );
     event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
+    event CredentialGroupStatusChanged(
+        uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status
+    );
 
     function setUp() public {
         owner = address(this);
@@ -249,13 +251,73 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(0, 0, 0);
     }
 
+    // --- Credential group suspend / activate tests ---
+
+    function testSuspendCredentialGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupStatusChanged(credentialGroupId, ICredentialRegistry.CredentialGroupStatus.SUSPENDED);
+
+        registry.suspendCredentialGroup(credentialGroupId);
+        assertFalse(registry.credentialGroupIsActive(credentialGroupId));
+    }
+
+    function testSuspendCredentialGroupNotActive() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        vm.expectRevert("BID::credential group not active");
+        registry.suspendCredentialGroup(credentialGroupId);
+    }
+
+    function testSuspendCredentialGroupOnlyOwner() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.suspendCredentialGroup(credentialGroupId);
+    }
+
+    function testActivateCredentialGroup() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        assertFalse(registry.credentialGroupIsActive(credentialGroupId));
+
+        vm.expectEmit(true, false, false, true);
+        emit CredentialGroupStatusChanged(credentialGroupId, ICredentialRegistry.CredentialGroupStatus.ACTIVE);
+
+        registry.activateCredentialGroup(credentialGroupId);
+        assertTrue(registry.credentialGroupIsActive(credentialGroupId));
+    }
+
+    function testActivateCredentialGroupNotSuspended() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        vm.expectRevert("BID::credential group not suspended");
+        registry.activateCredentialGroup(credentialGroupId);
+    }
+
+    function testActivateCredentialGroupOnlyOwner() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.suspendCredentialGroup(credentialGroupId);
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.activateCredentialGroup(credentialGroupId);
+    }
+
     // --- Trusted verifier tests ---
 
     function testAddTrustedVerifier() public {
         address newVerifier = makeAddr("new-verifier");
 
-        vm.expectEmit(true, false, false, false);
-        emit TrustedVerifierAdded(newVerifier);
+        vm.expectEmit(true, false, false, true);
+        emit TrustedVerifierUpdated(newVerifier, true);
 
         registry.addTrustedVerifier(newVerifier);
         assertTrue(registry.trustedVerifiers(newVerifier));
@@ -279,8 +341,8 @@ contract CredentialRegistryTest is Test {
         registry.addTrustedVerifier(newVerifier);
         assertTrue(registry.trustedVerifiers(newVerifier));
 
-        vm.expectEmit(true, false, false, false);
-        emit TrustedVerifierRemoved(newVerifier);
+        vm.expectEmit(true, false, false, true);
+        emit TrustedVerifierUpdated(newVerifier, false);
 
         registry.removeTrustedVerifier(newVerifier);
         assertFalse(registry.trustedVerifiers(newVerifier));
@@ -335,8 +397,8 @@ contract CredentialRegistryTest is Test {
         uint256 appId = registry.registerApp(0);
         assertTrue(registry.appIsActive(appId));
 
-        vm.expectEmit(true, false, false, false);
-        emit AppSuspended(appId);
+        vm.expectEmit(true, false, false, true);
+        emit AppStatusChanged(appId, ICredentialRegistry.AppStatus.SUSPENDED);
 
         registry.suspendApp(appId);
         assertFalse(registry.appIsActive(appId));
@@ -363,8 +425,8 @@ contract CredentialRegistryTest is Test {
         registry.suspendApp(appId);
         assertFalse(registry.appIsActive(appId));
 
-        vm.expectEmit(true, false, false, false);
-        emit AppActivated(appId);
+        vm.expectEmit(true, false, false, true);
+        emit AppStatusChanged(appId, ICredentialRegistry.AppStatus.ACTIVE);
 
         registry.activateApp(appId);
         assertTrue(registry.appIsActive(appId));

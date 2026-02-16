@@ -9,12 +9,13 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 | Contract | Address | Chains |
 |---|---|---|
 | Semaphore | `0x8A1fd199516489B0Fb7153EB5f075cDAC83c693D` | mainnet (8453), Sepolia (84532) |
-| CredentialRegistry | `0x4CeA320D9b08A3a32cfD55360E0fc2137542478d` | mainnet (8453), Sepolia (84532) |
-| DefaultScorer | `0xcE4A14a929FfF47df30216f4C8fa8907825F494F` | mainnet (8453), Sepolia (84532) |
+| CredentialRegistry | `0xfd600B14Dc5A145ec9293Fd5768ae10Ccc1E91Fe` | mainnet (8453), Sepolia (84532) |
+| DefaultScorer | `0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345` | mainnet (8453), Sepolia (84532) |
+| ScorerFactory | `0x05321FAAD6315a04d5024Ee5b175AB1C62a3fd44` | mainnet (8453), Sepolia (84532) |
 
-Owner / trusted verifier: `0x4e8DFA541AC8875FAd0710AE4a58790b5157d617`
+Owner: `0x6F0CDcd334BA91A5E221582665Cce0431aD4Fc0b`
+Trusted verifier (Sepolia): `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
 Trusted verifier (mainnet): `0x9186aA65288bFfa67fB58255AeeaFfc4515535d9`
-Additional trusted verifier (Sepolia): `0x3c50f7055D804b51e506Bc1EA7D082cB1548376C`
 
 ## Credential Groups
 

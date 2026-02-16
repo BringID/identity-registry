@@ -113,6 +113,7 @@ interface ICredentialRegistry {
     function setCredentialGroupFamily(uint256 credentialGroupId_, uint256 familyId_) external;
     function setAttestationValidityDuration(uint256 duration_) external;
     function suspendCredentialGroup(uint256 credentialGroupId_) external;
+    function activateCredentialGroup(uint256 credentialGroupId_) external;
     function addTrustedVerifier(address verifier_) external;
     function removeTrustedVerifier(address verifier_) external;
 

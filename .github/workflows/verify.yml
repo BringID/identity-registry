@@ -12,9 +12,6 @@ on:
       trusted_verifier_address:
         description: "Trusted verifier address (constructor arg)"
         required: true
-      nullifier_verifier_address:
-        description: "NullifierVerifier contract address (constructor arg)"
-        required: true
       chain_id:
         description: "Chain ID"
         required: true
@@ -48,7 +45,7 @@ jobs:
             ${{ inputs.registry_address }} \
             src/registry/CredentialRegistry.sol:CredentialRegistry \
             --chain ${{ inputs.chain_id }} \
-            --constructor-args $(cast abi-encode "constructor(address,address,address)" "${{ inputs.semaphore_address }}" "${{ inputs.trusted_verifier_address }}" "${{ inputs.nullifier_verifier_address }}") \
+            --constructor-args $(cast abi-encode "constructor(address,address)" "${{ inputs.semaphore_address }}" "${{ inputs.trusted_verifier_address }}") \
             --etherscan-api-key "$ETHERSCAN_API_KEY" \
             --watch
 

@@ -2,7 +2,7 @@
 
 The `DefaultScorer` contract stores global scores for each credential group. Scores can be read on-chain in a single call — no iteration or multicall needed.
 
-**DefaultScorer address (Base mainnet & Sepolia):** `0xcE4A14a929FfF47df30216f4C8fa8907825F494F`
+**DefaultScorer address (Base mainnet & Sepolia):** `0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345`
 
 ## Get All Scores
 
@@ -11,7 +11,7 @@ The `DefaultScorer` contract stores global scores for each credential group. Sco
 ### cast (Foundry)
 
 ```bash
-cast call 0xcE4A14a929FfF47df30216f4C8fa8907825F494F \
+cast call 0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345 \
   "getAllScores()(uint256[],uint256[])" \
   --rpc-url $BASE_RPC_URL
 ```
@@ -20,7 +20,7 @@ cast call 0xcE4A14a929FfF47df30216f4C8fa8907825F494F \
 
 ```js
 const scorer = new ethers.Contract(
-  "0xcE4A14a929FfF47df30216f4C8fa8907825F494F",
+  "0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345",
   ["function getAllScores() view returns (uint256[], uint256[])"],
   provider
 );
@@ -33,7 +33,7 @@ const [groupIds, scores] = await scorer.getAllScores();
 
 ```js
 const [groupIds, scores] = await publicClient.readContract({
-  address: "0xcE4A14a929FfF47df30216f4C8fa8907825F494F",
+  address: "0x6a0b5ba649C7667A0C4Cd7FE8a83484AEE6C5345",
   abi: [{
     name: "getAllScores",
     type: "function",
