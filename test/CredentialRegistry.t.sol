@@ -2367,4 +2367,91 @@ contract CredentialRegistryTest is Test {
         vm.expectRevert();
         attacker.attackDuringSubmitProofs();
     }
+
+    // --- Fuzz tests for timestamp boundaries ---
+
+    function testFuzzAttestationExpiry(uint256 timeDelta) public {
+        timeDelta = bound(timeDelta, 0, 2 hours);
+
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        uint256 attestationValidity = registry.attestationValidityDuration();
+
+        vm.warp(block.timestamp + timeDelta);
+
+        if (timeDelta <= attestationValidity) {
+            // Should succeed — attestation still valid
+            registry.registerCredential(att, v, r, s);
+        } else {
+            // Should revert — attestation expired
+            vm.expectRevert("BID::attestation expired");
+            registry.registerCredential(att, v, r, s);
+        }
+    }
+
+    function testFuzzCredentialExpiry(uint256 timeDelta) public {
+        uint256 validityDuration = 30 days;
+        timeDelta = bound(timeDelta, 0, 60 days);
+
+        uint256 credentialGroupId = 10;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        vm.warp(block.timestamp + timeDelta);
+
+        uint256[] memory siblings = new uint256[](0);
+
+        if (timeDelta >= validityDuration) {
+            // Should succeed — credential expired
+            registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+        } else {
+            // Should revert — not yet expired
+            vm.expectRevert("BID::not yet expired");
+            registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
+        }
+    }
+
+    function testFuzzRecoveryTimelock(uint256 timeDelta) public {
+        uint256 recoveryTimelock = 1 days;
+        timeDelta = bound(timeDelta, 0, 3 days);
+
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        registry.setAppRecoveryTimelock(DEFAULT_APP_ID, recoveryTimelock);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
+        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
+
+        uint256[] memory siblings = new uint256[](0);
+        _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
+
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, DEFAULT_APP_ID));
+
+        vm.warp(block.timestamp + timeDelta);
+
+        if (timeDelta >= recoveryTimelock) {
+            // Should succeed — timelock expired
+            registry.executeRecovery(registrationHash);
+        } else {
+            // Should revert — timelock not expired
+            vm.expectRevert("BID::recovery timelock not expired");
+            registry.executeRecovery(registrationHash);
+        }
+    }
 }
