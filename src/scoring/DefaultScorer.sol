@@ -12,6 +12,7 @@ contract DefaultScorer is IScorer, Ownable {
     event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
 
     mapping(uint256 credentialGroupId => uint256) public scores;
+    mapping(uint256 credentialGroupId => bool) internal _isTracked;
     uint256[] internal _scoredGroupIds;
 
     /// @param owner_ The address that will own this scorer.
@@ -23,7 +24,10 @@ contract DefaultScorer is IScorer, Ownable {
     /// @param credentialGroupId_ The credential group ID.
     /// @param score_ The score value.
     function setScore(uint256 credentialGroupId_, uint256 score_) public onlyOwner {
-        if (scores[credentialGroupId_] == 0) _scoredGroupIds.push(credentialGroupId_);
+        if (!_isTracked[credentialGroupId_]) {
+            _scoredGroupIds.push(credentialGroupId_);
+            _isTracked[credentialGroupId_] = true;
+        }
         scores[credentialGroupId_] = score_;
         emit ScoreSet(credentialGroupId_, score_);
     }
@@ -34,7 +38,10 @@ contract DefaultScorer is IScorer, Ownable {
     function setScores(uint256[] calldata credentialGroupIds_, uint256[] calldata scores_) external onlyOwner {
         require(credentialGroupIds_.length == scores_.length, "length mismatch");
         for (uint256 i; i < credentialGroupIds_.length; ++i) {
-            if (scores[credentialGroupIds_[i]] == 0) _scoredGroupIds.push(credentialGroupIds_[i]);
+            if (!_isTracked[credentialGroupIds_[i]]) {
+                _scoredGroupIds.push(credentialGroupIds_[i]);
+                _isTracked[credentialGroupIds_[i]] = true;
+            }
             scores[credentialGroupIds_[i]] = scores_[i];
             emit ScoreSet(credentialGroupIds_[i], scores_[i]);
         }
