@@ -144,6 +144,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(!cred.registered, "BID::already registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
 
         // Lazily create the per-app Semaphore group
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
@@ -207,6 +208,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(cred.registered, "BID::not registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
         require(attestation_.semaphoreIdentityCommitment == cred.commitment, "BID::commitment mismatch");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
 
@@ -610,6 +612,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         CredentialRecord storage cred = credentials[registrationHash];
 
         require(cred.registered, "BID::not registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "BID::recovery disabled");
 
