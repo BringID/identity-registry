@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 
@@ -122,6 +122,7 @@ interface ICredentialRegistry {
     function suspendApp(uint256 appId_) external;
     function activateApp(uint256 appId_) external;
     function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) external;
-    function setAppAdmin(uint256 appId_, address newAdmin_) external;
+    function transferAppAdmin(uint256 appId_, address newAdmin_) external;
+    function acceptAppAdmin(uint256 appId_) external;
     function setAppScorer(uint256 appId_, address scorer_) external;
 }

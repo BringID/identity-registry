@@ -93,6 +93,7 @@ contract CredentialRegistryTest is Test {
     event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
     event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
     event AppScorerSet(uint256 indexed appId, address indexed scorer);
+    event AppAdminTransferInitiated(uint256 indexed appId, address indexed currentAdmin, address indexed newAdmin);
     event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
     event RecoveryInitiated(
         bytes32 indexed registrationHash,
@@ -471,24 +472,41 @@ contract CredentialRegistryTest is Test {
         registry.activateApp(appId);
     }
 
-    function testSetAppAdmin() public {
+    function testTransferAppAdmin() public {
         address newAdmin = makeAddr("new-admin");
 
         vm.expectEmit(true, true, true, false);
-        emit AppAdminTransferred(DEFAULT_APP_ID, owner, newAdmin);
+        emit AppAdminTransferInitiated(DEFAULT_APP_ID, owner, newAdmin);
+        registry.transferAppAdmin(DEFAULT_APP_ID, newAdmin);
 
-        registry.setAppAdmin(DEFAULT_APP_ID, newAdmin);
-
+        // Admin should not change yet
         (,, address admin,) = registry.apps(DEFAULT_APP_ID);
-        assertEq(admin, newAdmin);
+        assertEq(admin, owner);
+
+        // New admin accepts
+        vm.prank(newAdmin);
+        vm.expectEmit(true, true, true, false);
+        emit AppAdminTransferred(DEFAULT_APP_ID, owner, newAdmin);
+        registry.acceptAppAdmin(DEFAULT_APP_ID);
+
+        (,, address updatedAdmin,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(updatedAdmin, newAdmin);
     }
 
-    function testSetAppAdminNonAdmin() public {
+    function testTransferAppAdminNonAdmin() public {
         address notAdmin = makeAddr("not-admin");
 
         vm.prank(notAdmin);
         vm.expectRevert("BID::not app admin");
-        registry.setAppAdmin(DEFAULT_APP_ID, notAdmin);
+        registry.transferAppAdmin(DEFAULT_APP_ID, notAdmin);
+    }
+
+    function testAcceptAppAdminNotPending() public {
+        address notPending = makeAddr("not-pending");
+
+        vm.prank(notPending);
+        vm.expectRevert("BID::not pending admin");
+        registry.acceptAppAdmin(DEFAULT_APP_ID);
     }
 
     function testSetAppScorer() public {
@@ -2457,9 +2475,9 @@ contract CredentialRegistryTest is Test {
 
     // --- Validation error tests ---
 
-    function testSetAppAdminRejectsZeroAddress() public {
+    function testTransferAppAdminRejectsZeroAddress() public {
         vm.expectRevert("BID::invalid admin address");
-        registry.setAppAdmin(DEFAULT_APP_ID, address(0));
+        registry.transferAppAdmin(DEFAULT_APP_ID, address(0));
     }
 
     function testSetAppScorerRejectsZeroAddress() public {
