@@ -8,5 +8,11 @@ broadcast/
 # Dotenv file
 .env
 
+# Dependencies
+node_modules/
+
+# Foundry lock
+foundry.lock
+
 # IDE project files
 .idea
