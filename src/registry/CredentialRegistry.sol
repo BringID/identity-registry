@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
@@ -8,6 +8,7 @@ import {DefaultScorer} from "../scoring/DefaultScorer.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
+import {Pausable} from "openzeppelin/security/Pausable.sol";
 import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
 
 /// @title CredentialRegistry
@@ -21,7 +22,7 @@ import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
 /// group, created lazily on first credential registration. Since Semaphore enforces
 /// per-group nullifier uniqueness, separate groups per app naturally prevent cross-app
 /// proof replay.
-contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuard {
+contract CredentialRegistry is ICredentialRegistry, Ownable2Step, Pausable, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /// @notice The Semaphore contract used for group management and ZK proof verification.
@@ -65,6 +66,9 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
 
     /// @notice Address of the DefaultScorer contract deployed by the constructor.
     address public defaultScorer;
+
+    /// @notice Pending app admin for two-step admin transfer.
+    mapping(uint256 appId => address) public pendingAppAdmin;
 
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
@@ -111,15 +115,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @param attestation_ The attestation containing credential details and Semaphore commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function registerCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         registerCredential(attestation_, v, r, s);
     }
 
@@ -140,7 +136,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+    function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
+        public
+        whenNotPaused
+        nonReentrant
+    {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(!cred.registered, "BID::already registered");
@@ -182,15 +182,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @param attestation_ The attestation (commitment must match the stored one).
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function renewCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         renewCredential(attestation_, v, r, s);
     }
 
@@ -204,7 +196,11 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+    function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
+        public
+        whenNotPaused
+        nonReentrant
+    {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(cred.registered, "BID::not registered");
@@ -263,6 +259,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
     function submitProof(uint256 context_, CredentialGroupProof memory proof_)
         public
+        whenNotPaused
         nonReentrant
         returns (uint256 _score)
     {
@@ -279,6 +276,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @return _score The total score across all validated credential groups.
     function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_)
         public
+        whenNotPaused
         nonReentrant
         returns (uint256 _score)
     {
@@ -356,6 +354,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     // ──────────────────────────────────────────────
     //  Owner-only administration
     // ──────────────────────────────────────────────
+
+    /// @notice Pauses the contract, preventing state-changing user operations.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpauses the contract, re-enabling state-changing user operations.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     /// @notice Creates a new credential group with the given ID.
     /// @dev The credential group ID is user-defined (not auto-incremented) and must be > 0.
@@ -498,15 +506,24 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
     }
 
-    /// @notice Transfers app admin to a new address.
+    /// @notice Initiates a two-step app admin transfer. The pending admin must call acceptAppAdmin to complete.
     /// @param appId_ The app ID.
     /// @param newAdmin_ The new admin address.
-    function setAppAdmin(uint256 appId_, address newAdmin_) public {
+    function transferAppAdmin(uint256 appId_, address newAdmin_) public {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
         require(newAdmin_ != address(0), "BID::invalid admin address");
+        pendingAppAdmin[appId_] = newAdmin_;
+        emit AppAdminTransferInitiated(appId_, msg.sender, newAdmin_);
+    }
+
+    /// @notice Completes a two-step app admin transfer. Must be called by the pending admin.
+    /// @param appId_ The app ID.
+    function acceptAppAdmin(uint256 appId_) public {
+        require(pendingAppAdmin[appId_] == msg.sender, "BID::not pending admin");
         address oldAdmin = apps[appId_].admin;
-        apps[appId_].admin = newAdmin_;
-        emit AppAdminTransferred(appId_, oldAdmin, newAdmin_);
+        apps[appId_].admin = msg.sender;
+        delete pendingAppAdmin[appId_];
+        emit AppAdminTransferred(appId_, oldAdmin, msg.sender);
     }
 
     /// @notice Sets a custom scorer contract for an app.
@@ -536,7 +553,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         bytes32 credentialId_,
         uint256 appId_,
         uint256[] calldata merkleProofSiblings_
-    ) public {
+    ) public whenNotPaused nonReentrant {
         uint256 familyId = credentialGroups[credentialGroupId_].familyId;
         bytes32 registrationHash = _registrationHash(familyId, credentialGroupId_, credentialId_, appId_);
         CredentialRecord storage cred = credentials[registrationHash];
@@ -575,15 +592,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         bytes memory signature_,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         initiateRecovery(attestation_, v, r, s, merkleProofSiblings_);
     }
 
@@ -607,7 +616,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
         bytes32 r,
         bytes32 s,
         uint256[] calldata merkleProofSiblings_
-    ) public {
+    ) public whenNotPaused nonReentrant {
         (, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
 
@@ -667,7 +676,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     /// @dev Adds the new commitment to the Semaphore group, updates the stored commitment,
     ///      and clears the pending recovery. Can be called by anyone once the timelock expires.
     /// @param registrationHash_ The registration hash identifying the credential being recovered.
-    function executeRecovery(bytes32 registrationHash_) public {
+    function executeRecovery(bytes32 registrationHash_) public whenNotPaused nonReentrant {
         CredentialRecord storage cred = credentials[registrationHash_];
         RecoveryRequest memory request = cred.pendingRecovery;
         require(request.executeAfter != 0, "BID::no pending recovery");
@@ -727,6 +736,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, ReentrancyGuar
     // ──────────────────────────────────────────────
     //  Internal helpers
     // ──────────────────────────────────────────────
+
+    /// @dev Unpacks a 65-byte ECDSA signature into (v, r, s) components.
+    function _unpackSignature(bytes memory signature_) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
+        require(signature_.length == 65, "BID::invalid attestation sig length");
+        assembly {
+            r := mload(add(signature_, 0x20))
+            s := mload(add(signature_, 0x40))
+            v := byte(0, mload(add(signature_, 0x60)))
+        }
+    }
 
     /// @dev Computes the registration hash. For family groups, uses familyId (shared across the
     ///      family) to naturally prevent double registration. For standalone groups, uses credentialGroupId.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
 
@@ -21,6 +21,7 @@ event TrustedVerifierUpdated(address indexed verifier, bool trusted);
 event AppRegistered(uint256 indexed appId, address indexed admin, uint256 recoveryTimelock);
 event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
 event AppScorerSet(uint256 indexed appId, address indexed scorer);
+event AppAdminTransferInitiated(uint256 indexed appId, address indexed currentAdmin, address indexed pendingAdmin);
 event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
 event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
 

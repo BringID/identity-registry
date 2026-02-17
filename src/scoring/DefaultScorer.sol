@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {IScorer} from "../registry/IScorer.sol";
-import {Ownable} from "openzeppelin/access/Ownable.sol";
+import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 
 /// @title DefaultScorer
 /// @notice Scoring contract that stores scores per credential group.
 ///         Used as the global default scorer (owned by BringID) and as app-specific
 ///         custom scorers (deployed via ScorerFactory, owned by the app admin).
-contract DefaultScorer is IScorer, Ownable {
+contract DefaultScorer is IScorer, Ownable2Step {
     event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
 
     mapping(uint256 credentialGroupId => uint256) public scores;
@@ -68,8 +68,9 @@ contract DefaultScorer is IScorer, Ownable {
     /// @return scores_ The corresponding scores.
     function getAllScores() external view returns (uint256[] memory credentialGroupIds_, uint256[] memory scores_) {
         credentialGroupIds_ = _scoredGroupIds;
-        scores_ = new uint256[](_scoredGroupIds.length);
-        for (uint256 i; i < _scoredGroupIds.length; ++i) {
+        uint256 len = _scoredGroupIds.length;
+        scores_ = new uint256[](len);
+        for (uint256 i; i < len; ++i) {
             scores_[i] = scores[_scoredGroupIds[i]];
         }
     }
