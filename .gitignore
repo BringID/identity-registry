@@ -10,3 +10,6 @@ broadcast/
 
 # IDE project files
 .idea
+
+# Dependencies
+node_modules/
