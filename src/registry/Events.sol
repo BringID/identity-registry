@@ -140,3 +140,8 @@ event AttestationValidityDurationSet(uint256 duration);
 /// @param credentialGroupId The credential group ID.
 /// @param status The new credential group status.
 event CredentialGroupStatusChanged(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status);
+
+/// @notice Emitted when the default scorer contract is updated by the owner.
+/// @param oldScorer The previous default scorer address.
+/// @param newScorer The new default scorer address.
+event DefaultScorerUpdated(address indexed oldScorer, address indexed newScorer);

@@ -526,6 +526,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, Pausable, Reen
         emit AppAdminTransferred(appId_, oldAdmin, msg.sender);
     }
 
+    /// @notice Updates the default scorer contract used for newly registered apps.
+    /// @dev Only affects future app registrations; existing apps keep their current scorer.
+    /// @param scorer_ The new default scorer address (must not be zero).
+    function setDefaultScorer(address scorer_) public onlyOwner {
+        require(scorer_ != address(0), "BID::invalid scorer address");
+        address oldScorer = defaultScorer;
+        defaultScorer = scorer_;
+        emit DefaultScorerUpdated(oldScorer, scorer_);
+    }
+
     /// @notice Sets a custom scorer contract for an app.
     /// @param appId_ The app ID.
     /// @param scorer_ The scorer contract address.
