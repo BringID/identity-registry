@@ -93,6 +93,7 @@ contract CredentialRegistryTest is Test {
     event AppStatusChanged(uint256 indexed appId, ICredentialRegistry.AppStatus status);
     event AppRecoveryTimelockSet(uint256 indexed appId, uint256 timelock);
     event AppScorerSet(uint256 indexed appId, address indexed scorer);
+    event AppAdminTransferInitiated(uint256 indexed appId, address indexed currentAdmin, address indexed newAdmin);
     event AppAdminTransferred(uint256 indexed appId, address indexed oldAdmin, address indexed newAdmin);
     event RecoveryInitiated(
         bytes32 indexed registrationHash,
@@ -471,24 +472,41 @@ contract CredentialRegistryTest is Test {
         registry.activateApp(appId);
     }
 
-    function testSetAppAdmin() public {
+    function testTransferAppAdmin() public {
         address newAdmin = makeAddr("new-admin");
 
         vm.expectEmit(true, true, true, false);
-        emit AppAdminTransferred(DEFAULT_APP_ID, owner, newAdmin);
+        emit AppAdminTransferInitiated(DEFAULT_APP_ID, owner, newAdmin);
+        registry.transferAppAdmin(DEFAULT_APP_ID, newAdmin);
 
-        registry.setAppAdmin(DEFAULT_APP_ID, newAdmin);
-
+        // Admin should not change yet
         (,, address admin,) = registry.apps(DEFAULT_APP_ID);
-        assertEq(admin, newAdmin);
+        assertEq(admin, owner);
+
+        // New admin accepts
+        vm.prank(newAdmin);
+        vm.expectEmit(true, true, true, false);
+        emit AppAdminTransferred(DEFAULT_APP_ID, owner, newAdmin);
+        registry.acceptAppAdmin(DEFAULT_APP_ID);
+
+        (,, address updatedAdmin,) = registry.apps(DEFAULT_APP_ID);
+        assertEq(updatedAdmin, newAdmin);
     }
 
-    function testSetAppAdminNonAdmin() public {
+    function testTransferAppAdminNonAdmin() public {
         address notAdmin = makeAddr("not-admin");
 
         vm.prank(notAdmin);
         vm.expectRevert("BID::not app admin");
-        registry.setAppAdmin(DEFAULT_APP_ID, notAdmin);
+        registry.transferAppAdmin(DEFAULT_APP_ID, notAdmin);
+    }
+
+    function testAcceptAppAdminNotPending() public {
+        address notPending = makeAddr("not-pending");
+
+        vm.prank(notPending);
+        vm.expectRevert("BID::not pending admin");
+        registry.acceptAppAdmin(DEFAULT_APP_ID);
     }
 
     function testSetAppScorer() public {
@@ -2457,14 +2475,61 @@ contract CredentialRegistryTest is Test {
 
     // --- Validation error tests ---
 
-    function testSetAppAdminRejectsZeroAddress() public {
+    function testTransferAppAdminRejectsZeroAddress() public {
         vm.expectRevert("BID::invalid admin address");
-        registry.setAppAdmin(DEFAULT_APP_ID, address(0));
+        registry.transferAppAdmin(DEFAULT_APP_ID, address(0));
     }
 
     function testSetAppScorerRejectsZeroAddress() public {
         vm.expectRevert("BID::invalid scorer address");
         registry.setAppScorer(DEFAULT_APP_ID, address(0));
+    }
+
+    // --- setDefaultScorer tests ---
+
+    event DefaultScorerUpdated(address indexed oldScorer, address indexed newScorer);
+
+    function testSetDefaultScorer() public {
+        address newScorer = address(new MockScorer());
+        address oldScorer = registry.defaultScorer();
+
+        vm.expectEmit(true, true, false, false);
+        emit DefaultScorerUpdated(oldScorer, newScorer);
+
+        registry.setDefaultScorer(newScorer);
+        assertEq(registry.defaultScorer(), newScorer);
+    }
+
+    function testSetDefaultScorerOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setDefaultScorer(address(0x123));
+    }
+
+    function testSetDefaultScorerRejectsZeroAddress() public {
+        vm.expectRevert("BID::invalid scorer address");
+        registry.setDefaultScorer(address(0));
+    }
+
+    function testSetDefaultScorerAffectsNewApps() public {
+        MockScorer newScorer = new MockScorer();
+        registry.setDefaultScorer(address(newScorer));
+
+        uint256 appId = registry.registerApp(0);
+        (,,, address appScorer) = registry.apps(appId);
+        assertEq(appScorer, address(newScorer));
+    }
+
+    function testSetDefaultScorerDoesNotAffectExistingApps() public {
+        address originalScorer = registry.defaultScorer();
+        uint256 existingAppId = registry.registerApp(0);
+
+        MockScorer newScorer = new MockScorer();
+        registry.setDefaultScorer(address(newScorer));
+
+        (,,, address appScorer) = registry.apps(existingAppId);
+        assertEq(appScorer, originalScorer);
     }
 
     function testRegisterCredentialRejectsZeroCommitment() public {
