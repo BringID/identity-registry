@@ -304,6 +304,10 @@ interface ICredentialRegistry {
     /// @param appId_ The app ID.
     function acceptAppAdmin(uint256 appId_) external;
 
+    /// @notice Updates the default scorer contract used for newly registered apps.
+    /// @param scorer_ The new default scorer address (must not be zero).
+    function setDefaultScorer(address scorer_) external;
+
     /// @notice Sets a custom scorer contract for an app. Only callable by the app admin.
     /// @param appId_ The app ID.
     /// @param scorer_ The scorer contract address.

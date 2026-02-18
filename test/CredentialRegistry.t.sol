@@ -2485,6 +2485,53 @@ contract CredentialRegistryTest is Test {
         registry.setAppScorer(DEFAULT_APP_ID, address(0));
     }
 
+    // --- setDefaultScorer tests ---
+
+    event DefaultScorerUpdated(address indexed oldScorer, address indexed newScorer);
+
+    function testSetDefaultScorer() public {
+        address newScorer = address(new MockScorer());
+        address oldScorer = registry.defaultScorer();
+
+        vm.expectEmit(true, true, false, false);
+        emit DefaultScorerUpdated(oldScorer, newScorer);
+
+        registry.setDefaultScorer(newScorer);
+        assertEq(registry.defaultScorer(), newScorer);
+    }
+
+    function testSetDefaultScorerOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setDefaultScorer(address(0x123));
+    }
+
+    function testSetDefaultScorerRejectsZeroAddress() public {
+        vm.expectRevert("BID::invalid scorer address");
+        registry.setDefaultScorer(address(0));
+    }
+
+    function testSetDefaultScorerAffectsNewApps() public {
+        MockScorer newScorer = new MockScorer();
+        registry.setDefaultScorer(address(newScorer));
+
+        uint256 appId = registry.registerApp(0);
+        (,,, address appScorer) = registry.apps(appId);
+        assertEq(appScorer, address(newScorer));
+    }
+
+    function testSetDefaultScorerDoesNotAffectExistingApps() public {
+        address originalScorer = registry.defaultScorer();
+        uint256 existingAppId = registry.registerApp(0);
+
+        MockScorer newScorer = new MockScorer();
+        registry.setDefaultScorer(address(newScorer));
+
+        (,,, address appScorer) = registry.apps(existingAppId);
+        assertEq(appScorer, originalScorer);
+    }
+
     function testRegisterCredentialRejectsZeroCommitment() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
