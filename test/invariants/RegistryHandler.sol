@@ -81,6 +81,7 @@ contract RegistryHandler is Test {
 
         ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
             registry: address(registry),
+            chainId: block.chainid,
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: appId,
