@@ -14,8 +14,7 @@ abstract contract CredentialManager is AttestationVerifier {
     /// @notice Register a credential using a verifier-signed attestation (bytes signature variant).
     /// @dev Convenience wrapper that unpacks a 65-byte signature into (v, r, s) components
     ///      and delegates to the main registerCredential implementation.
-    ///      The signature can be reused across all networks since it signs the attestation
-    ///      struct which includes the registry address.
+    ///      The signature is chain-bound — it includes the chain ID and registry address.
     /// @param attestation_ The attestation containing credential details and Semaphore commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function registerCredential(Attestation memory attestation_, bytes memory signature_) public {

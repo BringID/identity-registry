@@ -66,3 +66,19 @@ Two levels of configuration:
 2. **Per-app override** (`appMerkleTreeDuration`): Set by the app admin via `setAppMerkleTreeDuration()`. Overrides the registry default for that app. **Propagates to all existing Semaphore groups** for the app via `SEMAPHORE.updateGroupMerkleTreeDuration()`. Setting to 0 clears the override and propagates the registry default.
 
 This allows apps with different security requirements to tune the window independently.
+
+## Chain-Bound Attestations & Hash-Based App IDs
+
+### Problem
+
+Without chain binding, a verifier-signed attestation could be replayed on any chain where the registry is deployed at the same address (e.g. via CREATE2). Additionally, auto-incremented app IDs (1, 2, 3, ...) collide across chains by coincidence, so an attestation signed for "app 1" on Chain A would also be valid for "app 1" on Chain B if the registry address matched.
+
+### Mitigations
+
+1. **Chain-bound attestations**: The `Attestation` struct includes a `chainId` field validated against `block.chainid` in `verifyAttestation()`. Combined with the existing `registry` address check, this provides defense-in-depth against cross-chain replay -- both the contract address and the chain ID must match.
+
+2. **Hash-based app IDs**: App IDs are derived from `keccak256(block.chainid, msg.sender, nonce)` instead of a simple auto-incrementing counter. This makes app IDs unpredictable and naturally chain-unique, eliminating accidental ID collisions across chains.
+
+### Remaining attack paths
+
+An attacker would need to compromise a trusted verifier on the target chain to produce valid attestations. The existing verifier trust boundary and attestation expiry (default 30 minutes) limit the blast radius of such a compromise.

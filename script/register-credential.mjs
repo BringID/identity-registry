@@ -62,7 +62,7 @@ const wallet = new ethers.NonceManager(signer);
 
 // Minimal ABI — only the functions we call / read
 const registryAbi = [
-    "function registerCredential((address registry, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment, uint256 issuedAt) attestation, uint8 v, bytes32 r, bytes32 s)",
+    "function registerCredential((address registry, uint256 chainId, uint256 credentialGroupId, bytes32 credentialId, uint256 appId, uint256 semaphoreIdentityCommitment, uint256 issuedAt) attestation, uint8 v, bytes32 r, bytes32 s)",
     "function credentialGroups(uint256) view returns (uint8 status, uint256 validityDuration, uint256 familyId)",
     "function trustedVerifiers(address) view returns (bool)",
     "function createCredentialGroup(uint256 credentialGroupId, uint256 validityDuration, uint256 familyId)",
@@ -141,9 +141,11 @@ if (!isTrusted) {
 // ── Build & sign attestation ────────────────────────────────────────────────
 
 const issuedAt = Math.floor(Date.now() / 1000);
+const chainId = (await provider.getNetwork()).chainId;
 
 const attestation = {
     registry: REGISTRY_ADDRESS,
+    chainId,
     credentialGroupId,
     credentialId,
     appId,
@@ -154,9 +156,10 @@ const attestation = {
 // Encode the attestation the same way Solidity does:
 //   keccak256(abi.encode(attestation))
 const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["address", "uint256", "bytes32", "uint256", "uint256", "uint256"],
+    ["address", "uint256", "uint256", "bytes32", "uint256", "uint256", "uint256"],
     [
         attestation.registry,
+        attestation.chainId,
         attestation.credentialGroupId,
         attestation.credentialId,
         attestation.appId,
@@ -179,6 +182,7 @@ console.log("\nSending registerCredential tx...");
 const tx = await registry.registerCredential(
     [
         attestation.registry,
+        attestation.chainId,
         attestation.credentialGroupId,
         attestation.credentialId,
         attestation.appId,

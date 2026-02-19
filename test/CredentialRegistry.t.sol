@@ -145,6 +145,7 @@ contract CredentialRegistryTest is Test {
     {
         return ICredentialRegistry.Attestation({
             registry: address(registry),
+            chainId: block.chainid,
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: appId,
@@ -394,11 +395,8 @@ contract CredentialRegistryTest is Test {
         address appAdmin = makeAddr("app-admin");
 
         vm.prank(appAdmin);
-        vm.expectEmit(true, true, false, true);
-        emit AppRegistered(2, appAdmin, 0);
-
         uint256 appId = registry.registerApp(0);
-        assertEq(appId, 2);
+        assertTrue(appId != 0);
         assertTrue(registry.appIsActive(appId));
 
         (ICredentialRegistry.AppStatus status, uint256 timelock, address admin, address appScorer) =
@@ -409,14 +407,14 @@ contract CredentialRegistryTest is Test {
         assertEq(appScorer, registry.defaultScorer());
     }
 
-    function testRegisterAppReturnsIncrementingIds() public {
+    function testRegisterAppReturnsUniqueIds() public {
         uint256 id1 = registry.registerApp(0);
         uint256 id2 = registry.registerApp(0);
         uint256 id3 = registry.registerApp(0);
-        // DEFAULT_APP_ID = 1 from setUp
-        assertEq(id1, 2);
-        assertEq(id2, 3);
-        assertEq(id3, 4);
+        assertTrue(id1 != id2);
+        assertTrue(id2 != id3);
+        assertTrue(id1 != id3);
+        assertTrue(id1 != DEFAULT_APP_ID);
     }
 
     function testSuspendApp() public {
@@ -531,6 +529,54 @@ contract CredentialRegistryTest is Test {
         registry.setAppScorer(DEFAULT_APP_ID, address(0x123));
     }
 
+    // --- Chain-bound attestation tests ---
+
+    function testWrongChainIdRejected() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
+            registry: address(registry),
+            chainId: 999,
+            credentialGroupId: credentialGroupId,
+            credentialId: credentialId,
+            appId: DEFAULT_APP_ID,
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp
+        });
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("BID::wrong chain");
+        registry.registerCredential(att, v, r, s);
+    }
+
+    // --- Hash-based app ID tests ---
+
+    function testHashBasedAppIds() public {
+        uint256 id1 = registry.registerApp(0);
+        uint256 id2 = registry.registerApp(0);
+        assertTrue(id1 != id2);
+        assertTrue(registry.appIsActive(id1));
+        assertTrue(registry.appIsActive(id2));
+
+        // Same sender on a different chain produces different IDs
+        uint256 nonceBefore = registry.nextAppId();
+        vm.chainId(999);
+        uint256 id3 = registry.registerApp(0);
+        assertTrue(id3 != id1);
+        assertTrue(id3 != id2);
+        assertTrue(registry.appIsActive(id3));
+
+        // Verify app is functional — can register credentials against it
+        vm.chainId(31337); // reset to default
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        _registerCredential(credentialGroupId, keccak256("cred-1"), id1, TestUtils.semaphoreCommitment(12345));
+    }
+
     // --- JoinGroup tests ---
 
     function testRegisterCredential() public {
@@ -607,6 +653,7 @@ contract CredentialRegistryTest is Test {
 
         ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
             registry: address(0x123),
+            chainId: block.chainid,
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: DEFAULT_APP_ID,
@@ -1833,6 +1880,7 @@ contract CredentialRegistryTest is Test {
 
         ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
             registry: address(registry),
+            chainId: block.chainid,
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: DEFAULT_APP_ID,
