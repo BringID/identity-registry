@@ -89,7 +89,8 @@ interface ICredentialRegistry {
     }
 
     /// @notice A verifier-signed attestation authorizing a credential operation.
-    /// @param registry Address of the CredentialRegistry contract (prevents cross-chain replay).
+    /// @param registry Address of the CredentialRegistry contract.
+    /// @param chainId Chain ID this attestation is bound to (prevents cross-chain replay).
     /// @param credentialGroupId The credential group to register/renew/recover into.
     /// @param credentialId Application-specific credential identity derived by the verifier.
     /// @param appId The app this attestation is scoped to.
@@ -97,6 +98,7 @@ interface ICredentialRegistry {
     /// @param issuedAt Timestamp when the verifier created this attestation (for freshness checks).
     struct Attestation {
         address registry;
+        uint256 chainId;
         uint256 credentialGroupId;
         bytes32 credentialId;
         uint256 appId;

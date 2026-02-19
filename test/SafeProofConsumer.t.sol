@@ -64,6 +64,7 @@ contract SafeProofConsumerTest is Test {
     {
         return ICredentialRegistry.Attestation({
             registry: address(registry),
+            chainId: block.chainid,
             credentialGroupId: credentialGroupId,
             credentialId: credentialId,
             appId: appId_,

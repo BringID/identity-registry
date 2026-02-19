@@ -12,11 +12,12 @@ abstract contract AppManager is RegistryStorage {
     // ──────────────────────────────────────────────
 
     /// @notice Registers a new app. Caller becomes the app admin.
-    /// @dev App IDs are auto-incremented. The app uses the defaultScorer by default.
+    /// @dev App IDs are derived from keccak256(chainId, sender, nonce) for unpredictability
+    ///      and natural chain-uniqueness. The app uses the defaultScorer by default.
     /// @param recoveryTimelock_ The recovery timelock duration in seconds (0 to disable).
     /// @return appId_ The newly assigned app ID.
     function registerApp(uint256 recoveryTimelock_) public returns (uint256 appId_) {
-        appId_ = nextAppId++;
+        appId_ = uint256(keccak256(abi.encodePacked(block.chainid, msg.sender, nextAppId++)));
         apps[appId_] = App(AppStatus.ACTIVE, recoveryTimelock_, msg.sender, defaultScorer);
         emit AppRegistered(appId_, msg.sender, recoveryTimelock_);
     }
