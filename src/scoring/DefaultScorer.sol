@@ -9,6 +9,8 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 ///         Used as the global default scorer (owned by BringID) and as app-specific
 ///         custom scorers (deployed via ScorerFactory, owned by the app admin).
 contract DefaultScorer is IScorer, Ownable2Step {
+    error LengthMismatch();
+
     event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
 
     mapping(uint256 credentialGroupId => uint256) public scores;
@@ -36,7 +38,7 @@ contract DefaultScorer is IScorer, Ownable2Step {
     /// @param credentialGroupIds_ The credential group IDs.
     /// @param scores_ The score values (must match length of credentialGroupIds_).
     function setScores(uint256[] calldata credentialGroupIds_, uint256[] calldata scores_) external onlyOwner {
-        require(credentialGroupIds_.length == scores_.length, "length mismatch");
+        if (credentialGroupIds_.length != scores_.length) revert LengthMismatch();
         for (uint256 i; i < credentialGroupIds_.length; ++i) {
             if (!_isTracked[credentialGroupIds_[i]]) {
                 _scoredGroupIds.push(credentialGroupIds_[i]);

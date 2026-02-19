@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "../Errors.sol";
 import "../Events.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
@@ -26,8 +27,8 @@ abstract contract AppManager is RegistryStorage {
     /// @dev Only callable by the app admin.
     /// @param appId_ The app ID to suspend.
     function suspendApp(uint256 appId_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (apps[appId_].status != AppStatus.ACTIVE) revert AppNotActive();
         apps[appId_].status = AppStatus.SUSPENDED;
         emit AppStatusChanged(appId_, AppStatus.SUSPENDED);
     }
@@ -36,8 +37,8 @@ abstract contract AppManager is RegistryStorage {
     /// @dev Only callable by the app admin.
     /// @param appId_ The app ID to activate.
     function activateApp(uint256 appId_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(apps[appId_].status == AppStatus.SUSPENDED, "BID::app not suspended");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (apps[appId_].status != AppStatus.SUSPENDED) revert AppNotSuspended();
         apps[appId_].status = AppStatus.ACTIVE;
         emit AppStatusChanged(appId_, AppStatus.ACTIVE);
     }
@@ -47,8 +48,8 @@ abstract contract AppManager is RegistryStorage {
     /// @param appId_ The app ID to configure.
     /// @param recoveryTimelock_ The timelock duration in seconds (0 to disable recovery).
     function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (apps[appId_].status != AppStatus.ACTIVE) revert AppNotActive();
         apps[appId_].recoveryTimelock = recoveryTimelock_;
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
     }
@@ -57,8 +58,8 @@ abstract contract AppManager is RegistryStorage {
     /// @param appId_ The app ID.
     /// @param newAdmin_ The new admin address.
     function transferAppAdmin(uint256 appId_, address newAdmin_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(newAdmin_ != address(0), "BID::invalid admin address");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (newAdmin_ == address(0)) revert InvalidAdminAddress();
         pendingAppAdmin[appId_] = newAdmin_;
         emit AppAdminTransferInitiated(appId_, apps[appId_].admin, newAdmin_);
     }
@@ -66,7 +67,7 @@ abstract contract AppManager is RegistryStorage {
     /// @notice Completes a two-step app admin transfer. Must be called by the pending admin.
     /// @param appId_ The app ID.
     function acceptAppAdmin(uint256 appId_) public {
-        require(pendingAppAdmin[appId_] == msg.sender, "BID::not pending admin");
+        if (pendingAppAdmin[appId_] != msg.sender) revert NotPendingAdmin();
         address oldAdmin = apps[appId_].admin;
         apps[appId_].admin = msg.sender;
         delete pendingAppAdmin[appId_];
@@ -77,8 +78,8 @@ abstract contract AppManager is RegistryStorage {
     /// @param appId_ The app ID.
     /// @param scorer_ The scorer contract address.
     function setAppScorer(uint256 appId_, address scorer_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(scorer_ != address(0), "BID::invalid scorer address");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (scorer_ == address(0)) revert InvalidScorerAddress();
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
@@ -89,8 +90,8 @@ abstract contract AppManager is RegistryStorage {
     /// @param appId_ The app ID to configure.
     /// @param merkleTreeDuration_ The Merkle tree duration in seconds (0 = use registry default).
     function setAppMerkleTreeDuration(uint256 appId_, uint256 merkleTreeDuration_) public {
-        require(apps[appId_].admin == msg.sender, "BID::not app admin");
-        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
+        if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
+        if (apps[appId_].status != AppStatus.ACTIVE) revert AppNotActive();
         appMerkleTreeDuration[appId_] = merkleTreeDuration_;
 
         uint256 effectiveDuration = merkleTreeDuration_ > 0 ? merkleTreeDuration_ : defaultMerkleTreeDuration;

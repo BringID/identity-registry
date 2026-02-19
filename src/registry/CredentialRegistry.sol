@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "./Errors.sol";
 import "./Events.sol";
 import {DefaultScorer} from "../scoring/DefaultScorer.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
@@ -29,8 +30,8 @@ contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier
     constructor(ISemaphore semaphore_, address trustedVerifier_, uint256 defaultMerkleTreeDuration_)
         RegistryStorage(semaphore_)
     {
-        require(trustedVerifier_ != address(0), "BID::invalid trusted verifier");
-        require(defaultMerkleTreeDuration_ > 0, "BID::zero merkle tree duration");
+        if (trustedVerifier_ == address(0)) revert InvalidTrustedVerifier();
+        if (defaultMerkleTreeDuration_ == 0) revert ZeroMerkleTreeDuration();
         trustedVerifiers[trustedVerifier_] = true;
         defaultMerkleTreeDuration = defaultMerkleTreeDuration_;
         emit TrustedVerifierUpdated(trustedVerifier_, true);

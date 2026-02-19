@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "../Errors.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 
@@ -23,18 +24,17 @@ abstract contract AttestationVerifier is RegistryStorage {
         view
         returns (address signer, bytes32 registrationHash)
     {
-        require(
-            credentialGroups[attestation_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "BID::credential group inactive"
-        );
-        require(apps[attestation_.appId].status == AppStatus.ACTIVE, "BID::app not active");
-        require(attestation_.registry == address(this), "BID::wrong registry address");
-        require(attestation_.chainId == block.chainid, "BID::wrong chain");
-        require(attestation_.issuedAt <= block.timestamp, "BID::future attestation");
-        require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
+        if (credentialGroups[attestation_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) {
+            revert CredentialGroupInactive();
+        }
+        if (apps[attestation_.appId].status != AppStatus.ACTIVE) revert AppNotActive();
+        if (attestation_.registry != address(this)) revert WrongRegistryAddress();
+        if (attestation_.chainId != block.chainid) revert WrongChain();
+        if (attestation_.issuedAt > block.timestamp) revert FutureAttestation();
+        if (block.timestamp > attestation_.issuedAt + attestationValidityDuration) revert AttestationExpired();
 
         signer = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().recover(v, r, s);
-        require(trustedVerifiers[signer], "BID::untrusted verifier");
+        if (!trustedVerifiers[signer]) revert UntrustedVerifier();
 
         uint256 familyId = credentialGroups[attestation_.credentialGroupId].familyId;
         registrationHash =

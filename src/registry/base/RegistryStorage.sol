@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "../Errors.sol";
 import "../Events.sol";
 import {ICredentialRegistry} from "../ICredentialRegistry.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
@@ -103,7 +104,7 @@ abstract contract RegistryStorage is ICredentialRegistry, Ownable2Step, Pausable
 
     /// @dev Unpacks a 65-byte ECDSA signature into its (v, r, s) components.
     function _unpackSignature(bytes memory signature_) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
+        if (signature_.length != 65) revert InvalidAttestationSigLength();
         assembly {
             r := mload(add(signature_, 0x20))
             s := mload(add(signature_, 0x40))

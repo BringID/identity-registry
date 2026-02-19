@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "../Errors.sol";
 import "../Events.sol";
 import {IScorer} from "../IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
@@ -75,15 +76,14 @@ abstract contract ProofVerifier is RegistryStorage {
     ///      The `message` field is intentionally not checked here — it is a free-form field
     ///      that callers can use for application-specific binding (e.g. recipient address).
     function _submitProof(uint256 context_, CredentialGroupProof memory proof_) internal returns (uint256 _score) {
-        require(
-            credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "BID::credential group inactive"
-        );
-        require(apps[proof_.appId].status == AppStatus.ACTIVE, "BID::app not active");
-        require(
-            proof_.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context_))), "BID::scope mismatch"
-        );
-        require(appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId], "BID::no semaphore group");
+        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) {
+            revert CredentialGroupInactive();
+        }
+        if (apps[proof_.appId].status != AppStatus.ACTIVE) revert AppNotActive();
+        if (proof_.semaphoreProof.scope != uint256(keccak256(abi.encode(msg.sender, context_)))) {
+            revert ScopeMismatch();
+        }
+        if (!appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId]) revert NoSemaphoreGroup();
 
         uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
         SEMAPHORE.validateProof(semaphoreGroupId, proof_.semaphoreProof);
@@ -132,7 +132,7 @@ abstract contract ProofVerifier is RegistryStorage {
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
-            require(verifyProof(context_, _proof), "BID::invalid proof");
+            if (!verifyProof(context_, _proof)) revert InvalidProof();
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
         }
     }
