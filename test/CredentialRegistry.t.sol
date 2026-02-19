@@ -13,6 +13,7 @@ import {Semaphore} from "semaphore-protocol/Semaphore.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
 import "../src/registry/Events.sol";
+import "../src/registry/Errors.sol";
 
 contract MockScorer is IScorer {
     mapping(uint256 => uint256) public scores;
@@ -214,7 +215,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testConstructorRejectsZeroTrustedVerifier() public {
-        vm.expectRevert("BID::invalid trusted verifier");
+        vm.expectRevert(InvalidTrustedVerifier.selector);
         new CredentialRegistry(ISemaphore(address(semaphore)), address(0), 1 hours);
     }
 
@@ -260,7 +261,7 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
-        vm.expectRevert("BID::credential group exists");
+        vm.expectRevert(CredentialGroupExists.selector);
         registry.createCredentialGroup(credentialGroupId, 0, 0);
     }
 
@@ -295,7 +296,7 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
         registry.suspendCredentialGroup(credentialGroupId);
-        vm.expectRevert("BID::credential group not active");
+        vm.expectRevert(CredentialGroupNotActive.selector);
         registry.suspendCredentialGroup(credentialGroupId);
     }
 
@@ -324,7 +325,7 @@ contract CredentialRegistryTest is Test {
     function testActivateCredentialGroupNotSuspended() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
-        vm.expectRevert("BID::credential group not suspended");
+        vm.expectRevert(CredentialGroupNotSuspended.selector);
         registry.activateCredentialGroup(credentialGroupId);
     }
 
@@ -351,7 +352,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testAddTrustedVerifierRejectsZeroAddress() public {
-        vm.expectRevert("BID::invalid verifier address");
+        vm.expectRevert(InvalidVerifierAddress.selector);
         registry.addTrustedVerifier(address(0));
     }
 
@@ -385,7 +386,7 @@ contract CredentialRegistryTest is Test {
 
     function testRemoveTrustedVerifierNotTrusted() public {
         address untrusted = makeAddr("untrusted");
-        vm.expectRevert("BID::verifier not trusted");
+        vm.expectRevert(VerifierNotTrusted.selector);
         registry.removeTrustedVerifier(untrusted);
     }
 
@@ -433,14 +434,14 @@ contract CredentialRegistryTest is Test {
 
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.suspendApp(appId);
     }
 
     function testSuspendAppNotActive() public {
         uint256 appId = registry.registerApp(0);
         registry.suspendApp(appId);
-        vm.expectRevert("BID::app not active");
+        vm.expectRevert(AppNotActive.selector);
         registry.suspendApp(appId);
     }
 
@@ -462,13 +463,13 @@ contract CredentialRegistryTest is Test {
 
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.activateApp(appId);
     }
 
     function testActivateAppNotSuspended() public {
         uint256 appId = registry.registerApp(0);
-        vm.expectRevert("BID::app not suspended");
+        vm.expectRevert(AppNotSuspended.selector);
         registry.activateApp(appId);
     }
 
@@ -497,7 +498,7 @@ contract CredentialRegistryTest is Test {
         address notAdmin = makeAddr("not-admin");
 
         vm.prank(notAdmin);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.transferAppAdmin(DEFAULT_APP_ID, notAdmin);
     }
 
@@ -505,7 +506,7 @@ contract CredentialRegistryTest is Test {
         address notPending = makeAddr("not-pending");
 
         vm.prank(notPending);
-        vm.expectRevert("BID::not pending admin");
+        vm.expectRevert(NotPendingAdmin.selector);
         registry.acceptAppAdmin(DEFAULT_APP_ID);
     }
 
@@ -525,7 +526,7 @@ contract CredentialRegistryTest is Test {
         address notAdmin = makeAddr("not-admin");
 
         vm.prank(notAdmin);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.setAppScorer(DEFAULT_APP_ID, address(0x123));
     }
 
@@ -549,7 +550,7 @@ contract CredentialRegistryTest is Test {
         });
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
 
-        vm.expectRevert("BID::wrong chain");
+        vm.expectRevert(WrongChain.selector);
         registry.registerCredential(att, v, r, s);
     }
 
@@ -624,7 +625,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
-        vm.expectRevert("BID::credential group inactive");
+        vm.expectRevert(CredentialGroupInactive.selector);
         registry.registerCredential(message, v, r, s);
     }
 
@@ -640,7 +641,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, credentialId, inactiveAppId, commitment);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
-        vm.expectRevert("BID::app not active");
+        vm.expectRevert(AppNotActive.selector);
         registry.registerCredential(message, v, r, s);
     }
 
@@ -663,7 +664,7 @@ contract CredentialRegistryTest is Test {
 
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(message);
 
-        vm.expectRevert("BID::wrong registry address");
+        vm.expectRevert(WrongRegistryAddress.selector);
         registry.registerCredential(message, v, r, s);
     }
 
@@ -680,7 +681,7 @@ contract CredentialRegistryTest is Test {
 
         registry.registerCredential(message, v, r, s);
 
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         registry.registerCredential(message, v, r, s);
     }
 
@@ -703,7 +704,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
         (uint8 v2, bytes32 r2, bytes32 s2) = _signAttestation(message2);
 
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         registry.registerCredential(message2, v2, r2, s2);
     }
 
@@ -736,7 +737,7 @@ contract CredentialRegistryTest is Test {
 
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(123456, keccak256(abi.encode(message)).toEthSignedMessageHash());
 
-        vm.expectRevert("BID::untrusted verifier");
+        vm.expectRevert(UntrustedVerifier.selector);
         registry.registerCredential(message, v, r, s);
     }
 
@@ -831,7 +832,7 @@ contract CredentialRegistryTest is Test {
             })
         });
 
-        vm.expectRevert("BID::credential group inactive");
+        vm.expectRevert(CredentialGroupInactive.selector);
         registry.submitProof(0, proof);
     }
 
@@ -854,7 +855,7 @@ contract CredentialRegistryTest is Test {
             })
         });
 
-        vm.expectRevert("BID::app not active");
+        vm.expectRevert(AppNotActive.selector);
         registry.submitProof(0, proof);
     }
 
@@ -872,7 +873,7 @@ contract CredentialRegistryTest is Test {
         ICredentialRegistry.CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
 
-        vm.expectRevert("BID::scope mismatch");
+        vm.expectRevert(ScopeMismatch.selector);
         vm.prank(prover);
         registry.submitProof(0, proof);
     }
@@ -899,7 +900,7 @@ contract CredentialRegistryTest is Test {
             })
         });
 
-        vm.expectRevert("BID::no semaphore group");
+        vm.expectRevert(NoSemaphoreGroup.selector);
         vm.prank(prover);
         registry.submitProof(0, proof);
     }
@@ -1001,7 +1002,7 @@ contract CredentialRegistryTest is Test {
             })
         });
 
-        vm.expectRevert("BID::credential group inactive");
+        vm.expectRevert(CredentialGroupInactive.selector);
         registry.submitProofs(0, proofs);
     }
 
@@ -1020,7 +1021,7 @@ contract CredentialRegistryTest is Test {
     function testSetAppRecoveryTimelockNotAdmin() public {
         address notAdmin = makeAddr("not-admin");
         vm.prank(notAdmin);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
     }
 
@@ -1028,7 +1029,7 @@ contract CredentialRegistryTest is Test {
         uint256 appId = registry.registerApp(0);
         registry.suspendApp(appId);
 
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.setAppRecoveryTimelock(999, 1 days);
     }
 
@@ -1124,7 +1125,7 @@ contract CredentialRegistryTest is Test {
 
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("BID::not registered");
+        vm.expectRevert(NotRegistered.selector);
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
     }
 
@@ -1143,7 +1144,7 @@ contract CredentialRegistryTest is Test {
         uint256[] memory siblings = new uint256[](0);
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment1, siblings);
 
-        vm.expectRevert("BID::recovery already pending");
+        vm.expectRevert(RecoveryAlreadyPending.selector);
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment2, siblings);
     }
 
@@ -1159,7 +1160,7 @@ contract CredentialRegistryTest is Test {
 
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("BID::recovery disabled");
+        vm.expectRevert(RecoveryDisabled.selector);
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
     }
 
@@ -1214,14 +1215,14 @@ contract CredentialRegistryTest is Test {
 
         vm.warp(block.timestamp + 1 days - 1);
 
-        vm.expectRevert("BID::recovery timelock not expired");
+        vm.expectRevert(RecoveryTimelockNotExpired.selector);
         registry.executeRecovery(registrationHash);
     }
 
     function testExecuteRecoveryNoPending() public {
         bytes32 fakeHash = keccak256("no-such-recovery");
 
-        vm.expectRevert("BID::no pending recovery");
+        vm.expectRevert(NoPendingRecovery.selector);
         registry.executeRecovery(fakeHash);
     }
 
@@ -1321,7 +1322,7 @@ contract CredentialRegistryTest is Test {
 
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("BID::not yet expired");
+        vm.expectRevert(NotYetExpired.selector);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
@@ -1332,7 +1333,7 @@ contract CredentialRegistryTest is Test {
         bytes32 credentialId = keccak256("nonexistent");
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("BID::not registered");
+        vm.expectRevert(NotRegistered.selector);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
@@ -1347,7 +1348,7 @@ contract CredentialRegistryTest is Test {
 
         uint256[] memory siblings = new uint256[](0);
 
-        vm.expectRevert("BID::no expiry set");
+        vm.expectRevert(NoExpirySet.selector);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
@@ -1395,7 +1396,7 @@ contract CredentialRegistryTest is Test {
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
         // Renew with a different commitment reverts
-        vm.expectRevert("BID::commitment mismatch");
+        vm.expectRevert(CommitmentMismatch.selector);
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
     }
 
@@ -1519,7 +1520,7 @@ contract CredentialRegistryTest is Test {
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
 
         // removeExpiredCredential tries to remove the same commitment again from Semaphore — reverts
-        vm.expectRevert("BID::recovery pending");
+        vm.expectRevert(RecoveryPending.selector);
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
     }
 
@@ -1573,7 +1574,7 @@ contract CredentialRegistryTest is Test {
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
 
         // Cannot initiate a second recovery while one is pending
-        vm.expectRevert("BID::recovery already pending");
+        vm.expectRevert(RecoveryAlreadyPending.selector);
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, commitment2, siblings);
     }
 
@@ -1731,7 +1732,7 @@ contract CredentialRegistryTest is Test {
         bytes32 credentialId = keccak256("never-registered");
         uint256 commitment = TestUtils.semaphoreCommitment(12345);
 
-        vm.expectRevert("BID::not registered");
+        vm.expectRevert(NotRegistered.selector);
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
     }
 
@@ -1745,7 +1746,7 @@ contract CredentialRegistryTest is Test {
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
 
-        vm.expectRevert("BID::commitment mismatch");
+        vm.expectRevert(CommitmentMismatch.selector);
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment2);
     }
 
@@ -1764,7 +1765,7 @@ contract CredentialRegistryTest is Test {
         _initiateRecovery(credentialGroupId, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
 
         // Cannot renew while recovery is pending
-        vm.expectRevert("BID::recovery pending");
+        vm.expectRevert(RecoveryPending.selector);
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
     }
 
@@ -1784,7 +1785,7 @@ contract CredentialRegistryTest is Test {
         registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
 
         // registerCredential now rejects previously-registered credentials
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
     }
 
@@ -1843,7 +1844,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetCredentialGroupValidityDurationNonExistent() public {
-        vm.expectRevert("BID::credential group not found");
+        vm.expectRevert(CredentialGroupNotFound.selector);
         registry.setCredentialGroupValidityDuration(999, 7 days);
     }
 
@@ -1867,7 +1868,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetAttestationValidityDurationZero() public {
-        vm.expectRevert("BID::zero duration");
+        vm.expectRevert(ZeroDuration.selector);
         registry.setAttestationValidityDuration(0);
     }
 
@@ -1889,7 +1890,7 @@ contract CredentialRegistryTest is Test {
         });
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
 
-        vm.expectRevert("BID::future attestation");
+        vm.expectRevert(FutureAttestation.selector);
         registry.registerCredential(att, v, r, s);
     }
 
@@ -1907,7 +1908,7 @@ contract CredentialRegistryTest is Test {
         // Warp past attestation validity (default 30 minutes)
         vm.warp(block.timestamp + 31 minutes);
 
-        vm.expectRevert("BID::attestation expired");
+        vm.expectRevert(AttestationExpired.selector);
         registry.registerCredential(att, v, r, s);
     }
 
@@ -1928,7 +1929,7 @@ contract CredentialRegistryTest is Test {
 
         vm.warp(block.timestamp + 31 minutes);
 
-        vm.expectRevert("BID::attestation expired");
+        vm.expectRevert(AttestationExpired.selector);
         registry.renewCredential(att, v, r, s);
     }
 
@@ -1951,7 +1952,7 @@ contract CredentialRegistryTest is Test {
         vm.warp(block.timestamp + 31 minutes);
 
         uint256[] memory siblings = new uint256[](0);
-        vm.expectRevert("BID::attestation expired");
+        vm.expectRevert(AttestationExpired.selector);
         registry.initiateRecovery(att, v, r, s, siblings);
     }
 
@@ -1970,7 +1971,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
 
         // Register in group 2 (same family) with same credentialId reverts — same registration hash
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment2);
     }
 
@@ -2020,7 +2021,7 @@ contract CredentialRegistryTest is Test {
         vm.warp(block.timestamp + 30 days);
 
         // Register in sibling group still fails (registered flag persists)
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment2);
     }
 
@@ -2069,7 +2070,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
 
         // Try to renew with group 2 instead of group 1 — reverts
-        vm.expectRevert("BID::group mismatch");
+        vm.expectRevert(GroupMismatch.selector);
         _renewCredential(2, credentialId, DEFAULT_APP_ID, commitment);
     }
 
@@ -2088,7 +2089,7 @@ contract CredentialRegistryTest is Test {
         // Different families produce different registration hashes, so the credential
         // is not found under the new hash.
         uint256[] memory siblings = new uint256[](0);
-        vm.expectRevert("BID::not registered");
+        vm.expectRevert(NotRegistered.selector);
         _initiateRecovery(4, DEFAULT_APP_ID, credentialId, newCommitment, siblings);
     }
 
@@ -2130,7 +2131,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetCredentialGroupFamilyNonExistent() public {
-        vm.expectRevert("BID::credential group not found");
+        vm.expectRevert(CredentialGroupNotFound.selector);
         registry.setCredentialGroupFamily(999, 5);
     }
 
@@ -2147,14 +2148,14 @@ contract CredentialRegistryTest is Test {
 
         // Pass wrong credentialGroupId (2 instead of 1) — group mismatch
         uint256[] memory siblings = new uint256[](0);
-        vm.expectRevert("BID::group mismatch");
+        vm.expectRevert(GroupMismatch.selector);
         registry.removeExpiredCredential(2, credentialId, DEFAULT_APP_ID, siblings);
     }
 
     // --- Merkle tree duration tests ---
 
     function testConstructorRejectsZeroMerkleTreeDuration() public {
-        vm.expectRevert("BID::zero merkle tree duration");
+        vm.expectRevert(ZeroMerkleTreeDuration.selector);
         new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, 0);
     }
 
@@ -2178,7 +2179,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetDefaultMerkleTreeDurationRejectsZero() public {
-        vm.expectRevert("BID::zero merkle tree duration");
+        vm.expectRevert(ZeroMerkleTreeDuration.selector);
         registry.setDefaultMerkleTreeDuration(0);
     }
 
@@ -2193,7 +2194,7 @@ contract CredentialRegistryTest is Test {
     function testSetAppMerkleTreeDurationNotAdmin() public {
         address notAdmin = makeAddr("not-admin");
         vm.prank(notAdmin);
-        vm.expectRevert("BID::not app admin");
+        vm.expectRevert(NotAppAdmin.selector);
         registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 30 seconds);
     }
 
@@ -2201,7 +2202,7 @@ contract CredentialRegistryTest is Test {
         uint256 appId = registry.registerApp(0);
         registry.suspendApp(appId);
 
-        vm.expectRevert("BID::app not active");
+        vm.expectRevert(AppNotActive.selector);
         registry.setAppMerkleTreeDuration(appId, 30 seconds);
     }
 
@@ -2347,7 +2348,7 @@ contract CredentialRegistryTest is Test {
         _renewCredential(1, credentialId, DEFAULT_APP_ID, commitment);
 
         // Sibling group is still blocked (registration hash is the same)
-        vm.expectRevert("BID::already registered");
+        vm.expectRevert(AlreadyRegistered.selector);
         _registerCredential(2, credentialId, DEFAULT_APP_ID, commitment);
     }
 
@@ -2592,7 +2593,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.prank(prover);
-        vm.expectRevert("BID::invalid proof");
+        vm.expectRevert(InvalidProof.selector);
         registry.getScore(0, proofs);
     }
 
@@ -2659,7 +2660,7 @@ contract CredentialRegistryTest is Test {
             registry.registerCredential(att, v, r, s);
         } else {
             // Should revert — attestation expired
-            vm.expectRevert("BID::attestation expired");
+            vm.expectRevert(AttestationExpired.selector);
             registry.registerCredential(att, v, r, s);
         }
     }
@@ -2685,7 +2686,7 @@ contract CredentialRegistryTest is Test {
             registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
         } else {
             // Should revert — not yet expired
-            vm.expectRevert("BID::not yet expired");
+            vm.expectRevert(NotYetExpired.selector);
             registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, siblings);
         }
     }
@@ -2717,7 +2718,7 @@ contract CredentialRegistryTest is Test {
             registry.executeRecovery(registrationHash);
         } else {
             // Should revert — timelock not expired
-            vm.expectRevert("BID::recovery timelock not expired");
+            vm.expectRevert(RecoveryTimelockNotExpired.selector);
             registry.executeRecovery(registrationHash);
         }
     }
@@ -2725,12 +2726,12 @@ contract CredentialRegistryTest is Test {
     // --- Validation error tests ---
 
     function testTransferAppAdminRejectsZeroAddress() public {
-        vm.expectRevert("BID::invalid admin address");
+        vm.expectRevert(InvalidAdminAddress.selector);
         registry.transferAppAdmin(DEFAULT_APP_ID, address(0));
     }
 
     function testSetAppScorerRejectsZeroAddress() public {
-        vm.expectRevert("BID::invalid scorer address");
+        vm.expectRevert(InvalidScorerAddress.selector);
         registry.setAppScorer(DEFAULT_APP_ID, address(0));
     }
 
@@ -2757,7 +2758,7 @@ contract CredentialRegistryTest is Test {
     }
 
     function testSetDefaultScorerRejectsZeroAddress() public {
-        vm.expectRevert("BID::invalid scorer address");
+        vm.expectRevert(InvalidScorerAddress.selector);
         registry.setDefaultScorer(address(0));
     }
 
@@ -2791,7 +2792,7 @@ contract CredentialRegistryTest is Test {
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, 0);
         (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
 
-        vm.expectRevert("BID::invalid commitment");
+        vm.expectRevert(InvalidCommitment.selector);
         registry.registerCredential(att, v, r, s);
     }
 

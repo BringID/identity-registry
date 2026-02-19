@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import "../Errors.sol";
 import "../Events.sol";
 import {AttestationVerifier} from "./AttestationVerifier.sol";
 
@@ -51,20 +52,21 @@ abstract contract RecoveryManager is AttestationVerifier {
         (, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
 
-        require(cred.registered, "BID::not registered");
-        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
-        require(cred.pendingRecovery.executeAfter == 0, "BID::recovery already pending");
-        require(apps[attestation_.appId].recoveryTimelock > 0, "BID::recovery disabled");
+        if (!cred.registered) revert NotRegistered();
+        if (attestation_.semaphoreIdentityCommitment == 0) revert InvalidCommitment();
+        if (cred.pendingRecovery.executeAfter != 0) revert RecoveryAlreadyPending();
+        if (apps[attestation_.appId].recoveryTimelock == 0) revert RecoveryDisabled();
 
         // Allow same group (key recovery) or different group within the same family (group change).
         // Both go through the recovery timelock to prevent double-spend with different nullifiers.
         uint256 credFamilyId = credentialGroups[cred.credentialGroupId].familyId;
         uint256 attestFamilyId = credentialGroups[attestation_.credentialGroupId].familyId;
-        require(
-            attestation_.credentialGroupId == cred.credentialGroupId
-                || (credFamilyId > 0 && credFamilyId == attestFamilyId),
-            "BID::group mismatch"
-        );
+        if (
+            attestation_.credentialGroupId != cred.credentialGroupId
+                && !(credFamilyId > 0 && credFamilyId == attestFamilyId)
+        ) {
+            revert GroupMismatch();
+        }
 
         _executeInitiateRecovery(attestation_, registrationHash, merkleProofSiblings_);
     }
@@ -110,14 +112,13 @@ abstract contract RecoveryManager is AttestationVerifier {
     function executeRecovery(bytes32 registrationHash_) public nonReentrant whenNotPaused {
         CredentialRecord storage cred = credentials[registrationHash_];
         RecoveryRequest memory request = cred.pendingRecovery;
-        require(request.executeAfter != 0, "BID::no pending recovery");
-        require(block.timestamp >= request.executeAfter, "BID::recovery timelock not expired");
+        if (request.executeAfter == 0) revert NoPendingRecovery();
+        if (block.timestamp < request.executeAfter) revert RecoveryTimelockNotExpired();
 
-        require(
-            credentialGroups[request.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
-            "BID::credential group inactive"
-        );
-        require(apps[request.appId].status == AppStatus.ACTIVE, "BID::app not active");
+        if (credentialGroups[request.credentialGroupId].status != CredentialGroupStatus.ACTIVE) {
+            revert CredentialGroupInactive();
+        }
+        if (apps[request.appId].status != AppStatus.ACTIVE) revert AppNotActive();
 
         // Use _ensureAppSemaphoreGroup because the target group may not have a
         // Semaphore group yet (group change within a family to a never-used group).
