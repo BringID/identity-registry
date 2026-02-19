@@ -2746,4 +2746,216 @@ contract CredentialRegistryTest is Test {
         vm.expectRevert("BID::invalid commitment");
         registry.registerCredential(att, v, r, s);
     }
+
+    // --- Pause / Unpause tests ---
+
+    function testPause() public {
+        assertFalse(registry.paused());
+        registry.pause();
+        assertTrue(registry.paused());
+    }
+
+    function testPauseOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.pause();
+    }
+
+    function testUnpause() public {
+        registry.pause();
+        assertTrue(registry.paused());
+        registry.unpause();
+        assertFalse(registry.paused());
+    }
+
+    function testUnpauseOnlyOwner() public {
+        registry.pause();
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.unpause();
+    }
+
+    function testPauseBlocksRegisterCredential() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.pause();
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, keccak256("cred-1"), DEFAULT_APP_ID, 12345);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("Pausable: paused");
+        registry.registerCredential(att, v, r, s);
+    }
+
+    function testPauseBlocksRenewCredential() public {
+        uint256 credentialGroupId = 1;
+        uint256 validityDuration = 30 days;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        uint256 commitment = 12345;
+        bytes32 credentialId = keccak256("cred-1");
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        registry.pause();
+
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("Pausable: paused");
+        registry.renewCredential(att, v, r, s);
+    }
+
+    function testPauseBlocksRemoveExpiredCredential() public {
+        uint256 credentialGroupId = 1;
+        uint256 validityDuration = 1 hours;
+        registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
+
+        uint256 commitment = 12345;
+        bytes32 credentialId = keccak256("cred-1");
+        _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
+
+        // Advance past expiry
+        vm.warp(block.timestamp + validityDuration + 1);
+
+        registry.pause();
+
+        vm.expectRevert("Pausable: paused");
+        registry.removeExpiredCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, new uint256[](0));
+    }
+
+    function testPauseBlocksInitiateRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        // Register app with recovery enabled
+        uint256 appId = registry.registerApp(1 days);
+
+        uint256 commitment = 12345;
+        bytes32 credentialId = keccak256("cred-1");
+        _registerCredential(credentialGroupId, credentialId, appId, commitment);
+
+        registry.pause();
+
+        uint256 newCommitment = 67890;
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, appId, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("Pausable: paused");
+        registry.initiateRecovery(att, v, r, s, new uint256[](0));
+    }
+
+    function testPauseBlocksExecuteRecovery() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 recoveryTimelock = 1 days;
+        uint256 appId = registry.registerApp(recoveryTimelock);
+
+        uint256 commitment = 12345;
+        bytes32 credentialId = keccak256("cred-1");
+        _registerCredential(credentialGroupId, credentialId, appId, commitment);
+
+        // Initiate recovery
+        uint256 newCommitment = 67890;
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, credentialId, appId, newCommitment);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+        registry.initiateRecovery(att, v, r, s, new uint256[](0));
+
+        // Advance past timelock
+        vm.warp(block.timestamp + recoveryTimelock + 1);
+
+        // Get registration hash
+        bytes32 registrationHash =
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, credentialId, appId));
+
+        registry.pause();
+
+        vm.expectRevert("Pausable: paused");
+        registry.executeRecovery(registrationHash);
+    }
+
+    function testPauseBlocksSubmitProof() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        scorer.setScore(credentialGroupId, 10);
+
+        registry.pause();
+
+        ICredentialRegistry.CredentialGroupProof memory proof;
+        proof.credentialGroupId = credentialGroupId;
+        proof.appId = DEFAULT_APP_ID;
+
+        vm.expectRevert("Pausable: paused");
+        registry.submitProof(0, proof);
+    }
+
+    function testPauseBlocksSubmitProofs() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.pause();
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
+        proofs[0].credentialGroupId = credentialGroupId;
+        proofs[0].appId = DEFAULT_APP_ID;
+
+        vm.expectRevert("Pausable: paused");
+        registry.submitProofs(0, proofs);
+    }
+
+    function testPauseDoesNotBlockViewFunctions() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.pause();
+
+        // View functions should still work when paused
+        assertTrue(registry.paused());
+        assertTrue(registry.credentialGroupIsActive(credentialGroupId));
+        assertTrue(registry.appIsActive(DEFAULT_APP_ID));
+        assertEq(registry.owner(), owner);
+    }
+
+    function testUnpauseRestoresOperations() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.pause();
+
+        // Confirm blocked
+        ICredentialRegistry.Attestation memory att =
+            _createAttestation(credentialGroupId, keccak256("cred-1"), DEFAULT_APP_ID, 12345);
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("Pausable: paused");
+        registry.registerCredential(att, v, r, s);
+
+        // Unpause and confirm operations resume
+        registry.unpause();
+
+        registry.registerCredential(att, v, r, s);
+        (bool registered,,,,,) = registry.credentials(
+            keccak256(abi.encode(address(registry), uint256(0), credentialGroupId, keccak256("cred-1"), DEFAULT_APP_ID))
+        );
+        assertTrue(registered);
+    }
+
+    function testPauseDoesNotBlockOwnerAdmin() public {
+        registry.pause();
+
+        // Owner admin functions should still work (they don't have whenNotPaused)
+        uint256 credentialGroupId = 99;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+        assertTrue(registry.credentialGroupIsActive(credentialGroupId));
+
+        registry.addTrustedVerifier(address(0x1234));
+        assertTrue(registry.trustedVerifiers(address(0x1234)));
+    }
 }
