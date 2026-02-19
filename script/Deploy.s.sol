@@ -26,7 +26,8 @@ contract DeployDev is Script {
         } else {
             revert("Semaphore address is not provided");
         }
-        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifierAddress);
+        CredentialRegistry registry =
+            new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifierAddress, 5 minutes);
         Token bringToken = new Token("Bring", "BRING", deployer, 10 ** 32);
         vm.stopBroadcast();
 
@@ -58,7 +59,7 @@ contract Deploy is Script {
         } else {
             revert("SEMAPHORE_ADDRESS should be provided");
         }
-        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier);
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, 5 minutes);
         vm.stopBroadcast();
 
         console.log("Deployer:", deployer);
