@@ -65,12 +65,24 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Address of the DefaultScorer contract deployed by the constructor.
     address public defaultScorer;
 
+    /// @notice Registry-level default Merkle tree duration (seconds) for new Semaphore groups.
+    uint256 public defaultMerkleTreeDuration;
+
+    /// @notice Per-app override for Merkle tree duration. 0 = use registry default.
+    mapping(uint256 appId => uint256) public appMerkleTreeDuration;
+
+    /// @notice Tracks all Semaphore group IDs created for an app (for duration propagation).
+    mapping(uint256 appId => uint256[]) internal _appSemaphoreGroupIds;
+
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
-    constructor(ISemaphore semaphore_, address trustedVerifier_) {
+    /// @param defaultMerkleTreeDuration_ Default Merkle tree duration in seconds (must be > 0).
+    constructor(ISemaphore semaphore_, address trustedVerifier_, uint256 defaultMerkleTreeDuration_) {
         require(trustedVerifier_ != address(0), "BID::invalid trusted verifier");
+        require(defaultMerkleTreeDuration_ > 0, "BID::zero merkle tree duration");
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
+        defaultMerkleTreeDuration = defaultMerkleTreeDuration_;
         emit TrustedVerifierUpdated(trustedVerifier_, true);
 
         DefaultScorer _scorer = new DefaultScorer(msg.sender);
@@ -96,6 +108,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Returns all registered credential group IDs.
     function getCredentialGroupIds() external view returns (uint256[] memory) {
         return credentialGroupIds;
+    }
+
+    /// @notice Returns all Semaphore group IDs created for an app.
+    /// @param appId_ The app ID to query.
+    function getAppSemaphoreGroupIds(uint256 appId_) external view returns (uint256[] memory) {
+        return _appSemaphoreGroupIds[appId_];
     }
 
     // ──────────────────────────────────────────────
@@ -402,6 +420,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit AttestationValidityDurationSet(duration_);
     }
 
+    /// @notice Updates the registry-level default Merkle tree duration for new Semaphore groups.
+    /// @dev Does not propagate to existing groups. Only affects groups created after this call.
+    /// @param duration_ New duration in seconds (must be > 0).
+    function setDefaultMerkleTreeDuration(uint256 duration_) public onlyOwner {
+        require(duration_ > 0, "BID::zero merkle tree duration");
+        defaultMerkleTreeDuration = duration_;
+        emit DefaultMerkleTreeDurationSet(duration_);
+    }
+
     /// @notice Suspends an active credential group, preventing new registrations and proof validations.
     /// @param credentialGroupId_ The credential group ID to suspend.
     function suspendCredentialGroup(uint256 credentialGroupId_) public onlyOwner {
@@ -498,6 +525,25 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
+    }
+
+    /// @notice Sets a per-app Merkle tree duration override and propagates to all existing groups.
+    /// @dev Only callable by the app admin. Setting to 0 clears the override and propagates
+    ///      the registry default to all existing groups for this app.
+    /// @param appId_ The app ID to configure.
+    /// @param merkleTreeDuration_ The Merkle tree duration in seconds (0 = use registry default).
+    function setAppMerkleTreeDuration(uint256 appId_, uint256 merkleTreeDuration_) public {
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
+        appMerkleTreeDuration[appId_] = merkleTreeDuration_;
+
+        uint256 effectiveDuration = merkleTreeDuration_ > 0 ? merkleTreeDuration_ : defaultMerkleTreeDuration;
+        uint256[] storage groupIds = _appSemaphoreGroupIds[appId_];
+        for (uint256 i = 0; i < groupIds.length; i++) {
+            SEMAPHORE.updateGroupMerkleTreeDuration(groupIds[i], effectiveDuration);
+        }
+
+        emit AppMerkleTreeDurationSet(appId_, merkleTreeDuration_);
     }
 
     // ──────────────────────────────────────────────
@@ -724,16 +770,20 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     /// @dev Ensures a Semaphore group exists for the (credentialGroupId, appId) pair.
-    ///      Creates one lazily if it doesn't exist yet.
+    ///      Creates one lazily if it doesn't exist yet, using the resolved Merkle tree duration
+    ///      (per-app override if set, otherwise registry default).
     /// @return semaphoreGroupId The Semaphore group ID for the pair.
     function _ensureAppSemaphoreGroup(uint256 credentialGroupId_, uint256 appId_)
         internal
         returns (uint256 semaphoreGroupId)
     {
         if (!appSemaphoreGroupCreated[credentialGroupId_][appId_]) {
-            semaphoreGroupId = SEMAPHORE.createGroup();
+            uint256 appDuration = appMerkleTreeDuration[appId_];
+            uint256 duration = appDuration > 0 ? appDuration : defaultMerkleTreeDuration;
+            semaphoreGroupId = SEMAPHORE.createGroup(address(this), duration);
             appSemaphoreGroups[credentialGroupId_][appId_] = semaphoreGroupId;
             appSemaphoreGroupCreated[credentialGroupId_][appId_] = true;
+            _appSemaphoreGroupIds[appId_].push(semaphoreGroupId);
             emit AppSemaphoreGroupCreated(credentialGroupId_, appId_, semaphoreGroupId);
         } else {
             semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];

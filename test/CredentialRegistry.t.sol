@@ -95,6 +95,8 @@ contract CredentialRegistryTest is Test {
     event CredentialGroupStatusChanged(
         uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status
     );
+    event DefaultMerkleTreeDurationSet(uint256 duration);
+    event AppMerkleTreeDurationSet(uint256 indexed appId, uint256 merkleTreeDuration);
 
     function setUp() public {
         owner = address(this);
@@ -102,7 +104,7 @@ contract CredentialRegistryTest is Test {
 
         semaphoreVerifier = new SemaphoreVerifier();
         semaphore = new Semaphore(ISemaphoreVerifier(address(semaphoreVerifier)));
-        registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier);
+        registry = new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, 1 hours);
 
         scorer = DefaultScorer(registry.defaultScorer());
 
@@ -188,7 +190,7 @@ contract CredentialRegistryTest is Test {
 
     function testConstructorRejectsZeroTrustedVerifier() public {
         vm.expectRevert("BID::invalid trusted verifier");
-        new CredentialRegistry(ISemaphore(address(semaphore)), address(0));
+        new CredentialRegistry(ISemaphore(address(semaphore)), address(0), 1 hours);
     }
 
     function testDefaultScorerDeployedInConstructor() public {
@@ -2037,6 +2039,184 @@ contract CredentialRegistryTest is Test {
         uint256[] memory siblings = new uint256[](0);
         vm.expectRevert("BID::group mismatch");
         registry.removeExpiredCredential(2, credentialId, DEFAULT_APP_ID, siblings);
+    }
+
+    // --- Merkle tree duration tests ---
+
+    function testConstructorRejectsZeroMerkleTreeDuration() public {
+        vm.expectRevert("BID::zero merkle tree duration");
+        new CredentialRegistry(ISemaphore(address(semaphore)), trustedVerifier, 0);
+    }
+
+    function testConstructorSetsDefaultMerkleTreeDuration() public {
+        assertEq(registry.defaultMerkleTreeDuration(), 1 hours);
+    }
+
+    function testSetDefaultMerkleTreeDuration() public {
+        vm.expectEmit(false, false, false, true);
+        emit DefaultMerkleTreeDurationSet(5 minutes);
+
+        registry.setDefaultMerkleTreeDuration(5 minutes);
+        assertEq(registry.defaultMerkleTreeDuration(), 5 minutes);
+    }
+
+    function testSetDefaultMerkleTreeDurationOnlyOwner() public {
+        address notOwner = makeAddr("not-owner");
+        vm.prank(notOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        registry.setDefaultMerkleTreeDuration(5 minutes);
+    }
+
+    function testSetDefaultMerkleTreeDurationRejectsZero() public {
+        vm.expectRevert("BID::zero merkle tree duration");
+        registry.setDefaultMerkleTreeDuration(0);
+    }
+
+    function testSetAppMerkleTreeDuration() public {
+        vm.expectEmit(true, false, false, true);
+        emit AppMerkleTreeDurationSet(DEFAULT_APP_ID, 30 seconds);
+
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 30 seconds);
+        assertEq(registry.appMerkleTreeDuration(DEFAULT_APP_ID), 30 seconds);
+    }
+
+    function testSetAppMerkleTreeDurationNotAdmin() public {
+        address notAdmin = makeAddr("not-admin");
+        vm.prank(notAdmin);
+        vm.expectRevert("BID::not app admin");
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 30 seconds);
+    }
+
+    function testSetAppMerkleTreeDurationAppNotActive() public {
+        uint256 appId = registry.registerApp(0);
+        registry.suspendApp(appId);
+
+        vm.expectRevert("BID::app not active");
+        registry.setAppMerkleTreeDuration(appId, 30 seconds);
+    }
+
+    function testSetAppMerkleTreeDurationClearOverride() public {
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 30 seconds);
+        assertEq(registry.appMerkleTreeDuration(DEFAULT_APP_ID), 30 seconds);
+
+        // Clear override by setting to 0
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 0);
+        assertEq(registry.appMerkleTreeDuration(DEFAULT_APP_ID), 0);
+    }
+
+    function testGroupCreatedWithDefaultDuration() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+        (uint256 duration) = semaphore.groups(semaphoreGroupId);
+        assertEq(duration, 1 hours);
+    }
+
+    function testGroupCreatedWithAppOverrideDuration() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 2 minutes);
+
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+        (uint256 duration) = semaphore.groups(semaphoreGroupId);
+        assertEq(duration, 2 minutes);
+    }
+
+    function testSetAppMerkleTreeDurationPropagates() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        uint256 group1 = registry.appSemaphoreGroups(credentialGroupId1, DEFAULT_APP_ID);
+        uint256 group2 = registry.appSemaphoreGroups(credentialGroupId2, DEFAULT_APP_ID);
+
+        // Both groups start with the default duration
+        (uint256 d1) = semaphore.groups(group1);
+        (uint256 d2) = semaphore.groups(group2);
+        assertEq(d1, 1 hours);
+        assertEq(d2, 1 hours);
+
+        // Set app override — should propagate to both groups
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 10 seconds);
+
+        (d1) = semaphore.groups(group1);
+        (d2) = semaphore.groups(group2);
+        assertEq(d1, 10 seconds);
+        assertEq(d2, 10 seconds);
+    }
+
+    function testClearAppMerkleTreeDurationPropagatesDefault() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 10 seconds);
+
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+        (uint256 d) = semaphore.groups(semaphoreGroupId);
+        assertEq(d, 10 seconds);
+
+        // Clear override — propagates registry default
+        registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 0);
+
+        (d) = semaphore.groups(semaphoreGroupId);
+        assertEq(d, 1 hours);
+    }
+
+    function testDefaultMerkleTreeDurationDoesNotPropagateToExistingGroups() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
+        (uint256 d) = semaphore.groups(semaphoreGroupId);
+        assertEq(d, 1 hours);
+
+        // Change registry default — should NOT propagate to existing groups
+        registry.setDefaultMerkleTreeDuration(30 seconds);
+        assertEq(registry.defaultMerkleTreeDuration(), 30 seconds);
+
+        (d) = semaphore.groups(semaphoreGroupId);
+        assertEq(d, 1 hours); // unchanged
+    }
+
+    function testGetAppSemaphoreGroupIds() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        // Initially empty
+        uint256[] memory ids = registry.getAppSemaphoreGroupIds(DEFAULT_APP_ID);
+        assertEq(ids.length, 0);
+
+        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        ids = registry.getAppSemaphoreGroupIds(DEFAULT_APP_ID);
+        assertEq(ids.length, 2);
+        assertEq(ids[0], registry.appSemaphoreGroups(credentialGroupId1, DEFAULT_APP_ID));
+        assertEq(ids[1], registry.appSemaphoreGroups(credentialGroupId2, DEFAULT_APP_ID));
     }
 
     function testRenewalAfterExpiryRestoresFamilyBlock() public {

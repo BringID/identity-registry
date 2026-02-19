@@ -50,3 +50,5 @@ event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint
 event CredentialGroupFamilySet(uint256 indexed credentialGroupId, uint256 familyId);
 event AttestationValidityDurationSet(uint256 duration);
 event CredentialGroupStatusChanged(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status);
+event DefaultMerkleTreeDurationSet(uint256 duration);
+event AppMerkleTreeDurationSet(uint256 indexed appId, uint256 merkleTreeDuration);
