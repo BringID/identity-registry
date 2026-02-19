@@ -8,6 +8,10 @@ BringID Identity Registry — Solidity smart contracts for a privacy-preserving 
 
 Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). Built with Foundry and Solidity 0.8.23.
 
+## Workflow Conventions
+
+- **Pull requests**: Always open PRs against the `dev` branch (not `main`).
+
 ## Build & Test Commands
 
 ```bash
