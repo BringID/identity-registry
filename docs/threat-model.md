@@ -1,6 +1,6 @@
 # Threat Model & Formal Specification
 
-BringID Identity Registry — security analysis and protocol invariants.
+BringID Credential Registry — security analysis and protocol invariants.
 
 ## 1. Protocol Invariants
 

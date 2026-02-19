@@ -151,7 +151,7 @@ If the app's scorer is a contract owned by the connected wallet (not the Default
 | Framework | Next.js (App Router) | Standard for web3 dashboards, SSG-capable |
 | Wallet | wagmi + viem + ConnectKit (or RainbowKit) | De facto standard, Base chain support |
 | Styling | Tailwind CSS | Fast iteration, no component library lock-in |
-| Contract ABIs | Copy from `identity-registry` build artifacts (`out/`) | Typed via wagmi CLI codegen |
+| Contract ABIs | Copy from `credential-registry` build artifacts (`out/`) | Typed via wagmi CLI codegen |
 | Chain config | Base mainnet (8453) + Base Sepolia (84532) | Match the deployed contracts |
 | Hosting | Vercel | Zero-config Next.js deploys |
 | Event indexing | viem `getLogs` with filters | No subgraph needed for v1 — event volume is low |
@@ -162,7 +162,7 @@ No backend or database. Everything reads from chain state and events.
 
 ## Contract ABIs Needed
 
-From the `identity-registry` `out/` directory after `forge build`:
+From the `credential-registry` `out/` directory after `forge build`:
 
 - `out/CredentialRegistry.sol/CredentialRegistry.json` — full ABI
 - `out/DefaultScorer.sol/DefaultScorer.json` — full ABI
@@ -199,7 +199,7 @@ No separate `CustomScorer` contract — `DefaultScorer` handles both use cases.
 
 **Benefits over raw bytecode deploy:** discoverable (index `ScorerCreated` events), simpler UX (single function call vs raw deploy), verifiable on block explorer.
 
-The `ScorerFactory` contract lives in this repo (`identity-registry`) under `src/scoring/` and is deployed alongside the other contracts.
+The `ScorerFactory` contract lives in this repo (`credential-registry`) under `src/scoring/` and is deployed alongside the other contracts.
 
 ---
 

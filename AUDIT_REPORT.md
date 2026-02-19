@@ -1,6 +1,6 @@
 # Trail of Bits Code Maturity Assessment Report
 
-**Project**: BringID Identity Registry
+**Project**: BringID Credential Registry
 **Platform**: Solidity 0.8.23 / Foundry / Base (L2)
 **Branch**: `refactor/registry-contract`
 **Assessment Date**: 2026-02-19
@@ -12,7 +12,7 @@
 
 **Overall Maturity: 2.4 / 4.0 (Moderate)**
 
-The BringID Identity Registry is a well-architected privacy-preserving credential system with strong code-level security practices. The modular design, comprehensive event coverage, and thorough test suite demonstrate mature engineering. However, significant centralization risks (single EOA owner with instant control over critical parameters) and missing operational infrastructure (monitoring, incident response, formal verification) prevent a higher rating.
+The BringID Credential Registry is a well-architected privacy-preserving credential system with strong code-level security practices. The modular design, comprehensive event coverage, and thorough test suite demonstrate mature engineering. However, significant centralization risks (single EOA owner with instant control over critical parameters) and missing operational infrastructure (monitoring, incident response, formal verification) prevent a higher rating.
 
 ### Top 3 Strengths
 
