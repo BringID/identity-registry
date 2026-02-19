@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import {IScorer} from "../registry/IScorer.sol";
-import {Ownable} from "openzeppelin/access/Ownable.sol";
+import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 
 /// @title DefaultScorer
 /// @notice Scoring contract that stores scores per credential group.
 ///         Used as the global default scorer (owned by BringID) and as app-specific
 ///         custom scorers (deployed via ScorerFactory, owned by the app admin).
-contract DefaultScorer is IScorer, Ownable {
+contract DefaultScorer is IScorer, Ownable2Step {
     event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
 
     mapping(uint256 credentialGroupId => uint256) public scores;
+    mapping(uint256 credentialGroupId => bool) internal _isTracked;
     uint256[] internal _scoredGroupIds;
 
     /// @param owner_ The address that will own this scorer.
@@ -23,7 +24,10 @@ contract DefaultScorer is IScorer, Ownable {
     /// @param credentialGroupId_ The credential group ID.
     /// @param score_ The score value.
     function setScore(uint256 credentialGroupId_, uint256 score_) public onlyOwner {
-        if (scores[credentialGroupId_] == 0) _scoredGroupIds.push(credentialGroupId_);
+        if (!_isTracked[credentialGroupId_]) {
+            _scoredGroupIds.push(credentialGroupId_);
+            _isTracked[credentialGroupId_] = true;
+        }
         scores[credentialGroupId_] = score_;
         emit ScoreSet(credentialGroupId_, score_);
     }
@@ -34,7 +38,10 @@ contract DefaultScorer is IScorer, Ownable {
     function setScores(uint256[] calldata credentialGroupIds_, uint256[] calldata scores_) external onlyOwner {
         require(credentialGroupIds_.length == scores_.length, "length mismatch");
         for (uint256 i; i < credentialGroupIds_.length; ++i) {
-            if (scores[credentialGroupIds_[i]] == 0) _scoredGroupIds.push(credentialGroupIds_[i]);
+            if (!_isTracked[credentialGroupIds_[i]]) {
+                _scoredGroupIds.push(credentialGroupIds_[i]);
+                _isTracked[credentialGroupIds_[i]] = true;
+            }
             scores[credentialGroupIds_[i]] = scores_[i];
             emit ScoreSet(credentialGroupIds_[i], scores_[i]);
         }
@@ -61,8 +68,9 @@ contract DefaultScorer is IScorer, Ownable {
     /// @return scores_ The corresponding scores.
     function getAllScores() external view returns (uint256[] memory credentialGroupIds_, uint256[] memory scores_) {
         credentialGroupIds_ = _scoredGroupIds;
-        scores_ = new uint256[](_scoredGroupIds.length);
-        for (uint256 i; i < _scoredGroupIds.length; ++i) {
+        uint256 len = _scoredGroupIds.length;
+        scores_ = new uint256[](len);
+        for (uint256 i; i < len; ++i) {
             scores_[i] = scores[_scoredGroupIds[i]];
         }
     }
