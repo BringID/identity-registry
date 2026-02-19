@@ -64,6 +64,7 @@ interface ICredentialRegistry {
     function credentialGroupIsActive(uint256 credentialGroupId_) external view returns (bool);
     function appIsActive(uint256 appId_) external view returns (bool);
     function getCredentialGroupIds() external view returns (uint256[] memory);
+    function getAppSemaphoreGroupIds(uint256 appId_) external view returns (uint256[] memory);
     function verifyAttestation(Attestation calldata attestation_, uint8 v, bytes32 r, bytes32 s)
         external
         view
@@ -116,6 +117,7 @@ interface ICredentialRegistry {
     function activateCredentialGroup(uint256 credentialGroupId_) external;
     function addTrustedVerifier(address verifier_) external;
     function removeTrustedVerifier(address verifier_) external;
+    function setDefaultMerkleTreeDuration(uint256 duration_) external;
 
     // ── App management ──────────────────────────
     function registerApp(uint256 recoveryTimelock_) external returns (uint256);
@@ -124,4 +126,5 @@ interface ICredentialRegistry {
     function setAppRecoveryTimelock(uint256 appId_, uint256 recoveryTimelock_) external;
     function setAppAdmin(uint256 appId_, address newAdmin_) external;
     function setAppScorer(uint256 appId_, address scorer_) external;
+    function setAppMerkleTreeDuration(uint256 appId_, uint256 merkleTreeDuration_) external;
 }
