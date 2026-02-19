@@ -20,6 +20,14 @@ abstract contract ProofVerifier is RegistryStorage {
     ///      3. Require that the per-app Semaphore group exists.
     ///      4. Validate the Semaphore proof on-chain (proves group membership).
     ///         Semaphore also enforces per-group nullifier uniqueness internally.
+    ///
+    ///      WARNING: The `message` field of the Semaphore proof is NOT validated by this
+    ///      function. When a smart contract calls `submitProof()`, any user can copy the
+    ///      proof from the mempool and front-run the original transaction through the same
+    ///      contract, because `msg.sender` (and therefore `scope`) will be identical.
+    ///      Smart contract callers SHOULD bind the `message` field to the intended
+    ///      recipient or action to prevent this. See `SafeProofConsumer` for a ready-made
+    ///      helper that enforces message binding.
     /// @param context_ Application-defined context value. Combined with msg.sender to
     ///        compute the expected scope, allowing the same user to generate distinct
     ///        proofs for different contexts.
@@ -41,6 +49,12 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @dev Iterates over each proof, accumulates the group's score, and calls _submitProof()
     ///      which performs full Semaphore verification and consumes nullifiers. If any proof
     ///      is invalid, the entire transaction reverts.
+    ///
+    ///      WARNING: The `message` field of each Semaphore proof is NOT validated. When a
+    ///      smart contract calls `submitProofs()`, proofs can be front-run through the same
+    ///      contract because `msg.sender` (and therefore `scope`) is identical for any
+    ///      caller. Smart contract callers SHOULD validate `message` binding before
+    ///      forwarding proofs. See `SafeProofConsumer` for a ready-made helper.
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proofs_ Array of credential group proofs to submit.
     /// @return _score The total score across all validated credential groups.
@@ -58,6 +72,8 @@ abstract contract ProofVerifier is RegistryStorage {
 
     /// @dev Internal implementation of submitProof. Validates the proof, consumes the
     ///      Semaphore nullifier, and returns the credential group's score from the app's scorer.
+    ///      The `message` field is intentionally not checked here — it is a free-form field
+    ///      that callers can use for application-specific binding (e.g. recipient address).
     function _submitProof(uint256 context_, CredentialGroupProof memory proof_) internal returns (uint256 _score) {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,

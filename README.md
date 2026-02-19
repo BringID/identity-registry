@@ -44,6 +44,58 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 | 14 | Binance KYC | — | — | 20 | 180 days |
 | 15 | OKX KYC | — | — | 20 | 180 days |
 
+## Integrating Proof Consumption (Front-Running Protection)
+
+When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gating contract), the Semaphore `scope` is bound to `msg.sender` + `context`. This means any transaction routed through the same contract shares the same scope — an attacker can copy proofs from the mempool and front-run the original caller.
+
+**Solution:** Bind the Semaphore `message` field to the intended recipient using `SafeProofConsumer`.
+
+### Quick start
+
+```solidity
+import {SafeProofConsumer} from "src/registry/SafeProofConsumer.sol";
+import {ICredentialRegistry} from "src/registry/ICredentialRegistry.sol";
+
+contract MyAirdrop is SafeProofConsumer {
+    uint256 public immutable CONTEXT;
+
+    constructor(ICredentialRegistry registry_, uint256 context_)
+        SafeProofConsumer(registry_)
+    {
+        CONTEXT = context_;
+    }
+
+    function claim(
+        address recipient_,
+        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
+    ) external {
+        // Reverts if any proof's message != hash(recipient_)
+        _validateMessageBindings(proofs_, recipient_);
+
+        // Safe to forward — message is bound to recipient
+        uint256 score = REGISTRY.submitProofs(CONTEXT, proofs_);
+
+        // ... distribute tokens to recipient_ ...
+    }
+}
+```
+
+### Off-chain proof generation
+
+When generating proofs for a message-binding-aware contract, set the `message` to `keccak256(abi.encodePacked(recipientAddress))`:
+
+```javascript
+import { generateProof } from "@semaphore-protocol/core";
+import { ethers } from "ethers";
+
+const recipient = "0x1234...";
+const message = ethers.solidityPackedKeccak256(["address"], [recipient]);
+
+const proof = await generateProof(identity, group, message, scope);
+```
+
+See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`src/examples/SafeAirdrop.sol`](src/examples/SafeAirdrop.sol) for a complete example.
+
 ## Usage
 
 ### Install dependencies
