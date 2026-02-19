@@ -51,8 +51,8 @@ contract SafeProofConsumerTest is Test {
         // Register app (caller = owner = admin)
         appId = registry.registerApp(0);
 
-        // Deploy SafeAirdrop
-        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT);
+        // Deploy SafeAirdrop pinned to appId
+        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId);
     }
 
     // --- Helper functions ---
@@ -275,6 +275,31 @@ contract SafeProofConsumerTest is Test {
 
         // Second claim reverts
         vm.expectRevert(SafeAirdrop.AlreadyClaimed.selector);
+        airdrop.claim(alice, proofs);
+    }
+
+    function testClaimRevertsOnWrongAppId() public {
+        // Register a second app
+        uint256 attackerAppId = registry.registerApp(0);
+
+        address alice = makeAddr("alice");
+        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: CREDENTIAL_GROUP_ID,
+            appId: attackerAppId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: correctMessage,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(abi.encodeWithSelector(SafeAirdrop.AppIdMismatch.selector, appId, attackerAppId));
         airdrop.claim(alice, proofs);
     }
 
