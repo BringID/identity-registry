@@ -1,4 +1,4 @@
-## BringID Identity Registry
+## BringID Credential Registry
 
 Privacy-preserving credential system built with Semaphore zero-knowledge proofs. Users register credentials via verifier-signed attestations, then prove membership without revealing their identity.
 

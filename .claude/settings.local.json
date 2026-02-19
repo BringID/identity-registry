@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/claude/credential-registry rm tasks.md)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git status:*)",
+      "Bash(git fetch:*)",
+      "Bash(gh pr create:*)",
+      "Bash(git rm:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
+    ]
+  }
+}

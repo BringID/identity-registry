@@ -1,4 +1,4 @@
-# Migration Guide — Identity Registry v2 (PR #5)
+# Migration Guide — Credential Registry v2 (PR #5)
 
 This guide is for repos that integrate with the BringID CredentialRegistry contracts. It covers deployed addresses, new features, credential groups, default scores, and all ABI breaking changes.
 
