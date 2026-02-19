@@ -48,7 +48,7 @@ abstract contract RegistryStorage is ICredentialRegistry, Ownable2Step, Pausable
     /// @notice Array of all registered credential group IDs (for enumeration).
     uint256[] public credentialGroupIds;
 
-    /// @notice Auto-incrementing app ID counter. Next app will get this ID.
+    /// @notice Nonce used in hash-based app ID generation. Incremented on each registerApp() call.
     uint256 public nextAppId = 1;
 
     /// @notice Address of the DefaultScorer contract deployed by the constructor.

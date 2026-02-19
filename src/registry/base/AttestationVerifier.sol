@@ -29,6 +29,7 @@ abstract contract AttestationVerifier is RegistryStorage {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "BID::app not active");
         require(attestation_.registry == address(this), "BID::wrong registry address");
+        require(attestation_.chainId == block.chainid, "BID::wrong chain");
         require(attestation_.issuedAt <= block.timestamp, "BID::future attestation");
         require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
 

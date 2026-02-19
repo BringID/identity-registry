@@ -11,6 +11,7 @@ contract Generate is Script {
     function run() public {
         IRegistry.Attestation memory verifierMessage = IRegistry.Attestation({
             registry: vm.envAddress("REGISTRY"),
+            chainId: block.chainid,
             credentialGroupId: vm.envUint("CREDENTIAL_GROUP_ID"),
             credentialId: vm.envBytes32("CREDENTIAL_ID"),
             appId: vm.envUint("APP_ID"),
