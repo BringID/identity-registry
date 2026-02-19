@@ -30,6 +30,25 @@ library TestUtils {
         return abi.decode(FFI(inputs), (uint256, uint256, uint256, uint256, uint256[8]));
     }
 
+    function semaphoreProofWithMessage(
+        uint256 commitmentKey,
+        uint256 scope,
+        uint256 message,
+        uint256[] memory commitments
+    ) public returns (uint256, uint256, uint256, uint256, uint256[8] memory) {
+        string[] memory inputs = new string[](6 + commitments.length);
+        inputs[0] = "node";
+        inputs[1] = "test/semaphore-js/proof.mjs";
+        inputs[2] = vm.toString(bytes32(commitmentKey));
+        inputs[3] = vm.toString(bytes32(scope));
+        inputs[4] = "--message";
+        inputs[5] = vm.toString(bytes32(message));
+        for (uint256 i; i < commitments.length; i++) {
+            inputs[i + 6] = vm.toString(bytes32(commitments[i]));
+        }
+        return abi.decode(FFI(inputs), (uint256, uint256, uint256, uint256, uint256[8]));
+    }
+
     function FFI(string[] memory inputs) public returns (bytes memory res) {
         res = vm.ffi(inputs);
     }

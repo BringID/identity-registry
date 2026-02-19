@@ -1,24 +1,37 @@
 import { ethers } from "ethers";
 import { Identity, generateProof, Group } from "@semaphore-protocol/core";
 
-const privateKey = process.argv[2];
-const scope = process.argv[3];
+// Parse --message flag (optional, backward-compatible)
+let messageValue = "verification";
+const positionalArgs = [];
 
-if (process.argv.length < 5) {
-    console.log("Usage: node proof.js <privateKey> <scope> <groupCommitments...>");
+for (let i = 2; i < process.argv.length; i++) {
+    if (process.argv[i] === "--message" && i + 1 < process.argv.length) {
+        messageValue = process.argv[i + 1];
+        i++; // skip the value
+    } else {
+        positionalArgs.push(process.argv[i]);
+    }
+}
+
+const privateKey = positionalArgs[0];
+const scope = positionalArgs[1];
+
+if (positionalArgs.length < 3) {
+    console.log("Usage: node proof.mjs <privateKey> <scope> <groupCommitments...> [--message <hex>]");
     process.exit(1);
 }
 
 const identity = Identity.import(privateKey);
 const group = new Group();
-for (let i = 4; i < process.argv.length; i++) {
-    group.addMember(process.argv[i]);
+for (let i = 2; i < positionalArgs.length; i++) {
+    group.addMember(positionalArgs[i]);
 }
 
 const {
     merkleTreeDepth, merkleTreeRoot, nullifier, message, points
 } = await generateProof(
-    identity, group, "verification", scope
+    identity, group, messageValue, scope
 );
 
 console.log(
