@@ -1824,6 +1824,27 @@ contract CredentialRegistryTest is Test {
         registry.setAttestationValidityDuration(0);
     }
 
+    function testRegisterCredentialFutureAttestation() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        bytes32 credentialId = keccak256("blinded-id");
+        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+
+        ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
+            registry: address(registry),
+            credentialGroupId: credentialGroupId,
+            credentialId: credentialId,
+            appId: DEFAULT_APP_ID,
+            semaphoreIdentityCommitment: commitment,
+            issuedAt: block.timestamp + 1 hours
+        });
+        (uint8 v, bytes32 r, bytes32 s) = _signAttestation(att);
+
+        vm.expectRevert("BID::future attestation");
+        registry.registerCredential(att, v, r, s);
+    }
+
     function testRegisterCredentialExpiredAttestation() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);

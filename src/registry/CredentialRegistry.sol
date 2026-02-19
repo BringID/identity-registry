@@ -779,6 +779,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step, Pausable, Reen
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "BID::app not active");
         require(attestation_.registry == address(this), "BID::wrong registry address");
+        require(attestation_.issuedAt <= block.timestamp, "BID::future attestation");
         require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
 
         signer = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().recover(v, r, s);
