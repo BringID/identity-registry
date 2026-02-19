@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity 0.8.23;
 
 import "./Events.sol";
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
@@ -8,6 +8,8 @@ import {DefaultScorer} from "../scoring/DefaultScorer.sol";
 import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
+import {Pausable} from "openzeppelin/security/Pausable.sol";
+import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
 
 /// @title CredentialRegistry
 /// @notice Main contract for the BringID privacy-preserving credential system.
@@ -20,7 +22,7 @@ import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
 /// group, created lazily on first credential registration. Since Semaphore enforces
 /// per-group nullifier uniqueness, separate groups per app naturally prevent cross-app
 /// proof replay.
-contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
+contract CredentialRegistry is ICredentialRegistry, Ownable2Step, Pausable, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /// @notice The Semaphore contract used for group management and ZK proof verification.
@@ -65,12 +67,27 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @notice Address of the DefaultScorer contract deployed by the constructor.
     address public defaultScorer;
 
+    /// @notice Registry-level default Merkle tree duration (seconds) for new Semaphore groups.
+    uint256 public defaultMerkleTreeDuration;
+
+    /// @notice Per-app override for Merkle tree duration. 0 = use registry default.
+    mapping(uint256 appId => uint256) public appMerkleTreeDuration;
+
+    /// @notice Tracks all Semaphore group IDs created for an app (for duration propagation).
+    mapping(uint256 appId => uint256[]) internal _appSemaphoreGroupIds;
+
+    /// @notice Pending admin for two-step app admin transfer.
+    mapping(uint256 appId => address) public pendingAppAdmin;
+
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
-    constructor(ISemaphore semaphore_, address trustedVerifier_) {
+    /// @param defaultMerkleTreeDuration_ Default Merkle tree duration in seconds (must be > 0).
+    constructor(ISemaphore semaphore_, address trustedVerifier_, uint256 defaultMerkleTreeDuration_) {
         require(trustedVerifier_ != address(0), "BID::invalid trusted verifier");
+        require(defaultMerkleTreeDuration_ > 0, "BID::zero merkle tree duration");
         SEMAPHORE = semaphore_;
         trustedVerifiers[trustedVerifier_] = true;
+        defaultMerkleTreeDuration = defaultMerkleTreeDuration_;
         emit TrustedVerifierUpdated(trustedVerifier_, true);
 
         DefaultScorer _scorer = new DefaultScorer(msg.sender);
@@ -98,6 +115,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         return credentialGroupIds;
     }
 
+    /// @notice Returns all Semaphore group IDs created for an app.
+    /// @param appId_ The app ID to query.
+    function getAppSemaphoreGroupIds(uint256 appId_) external view returns (uint256[] memory) {
+        return _appSemaphoreGroupIds[appId_];
+    }
+
     // ──────────────────────────────────────────────
     //  Credential registration
     // ──────────────────────────────────────────────
@@ -110,15 +133,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param attestation_ The attestation containing credential details and Semaphore commitment.
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function registerCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         registerCredential(attestation_, v, r, s);
     }
 
@@ -139,10 +154,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+    function registerCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
+        public
+        nonReentrant
+        whenNotPaused
+    {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(!cred.registered, "BID::already registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
 
         // Lazily create the per-app Semaphore group
         uint256 semaphoreGroupId = _ensureAppSemaphoreGroup(attestation_.credentialGroupId, attestation_.appId);
@@ -180,15 +200,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param attestation_ The attestation (commitment must match the stored one).
     /// @param signature_ 65-byte ECDSA signature (r || s || v).
     function renewCredential(Attestation memory attestation_, bytes memory signature_) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         renewCredential(attestation_, v, r, s);
     }
 
@@ -202,10 +214,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param v ECDSA recovery parameter.
     /// @param r ECDSA signature component.
     /// @param s ECDSA signature component.
-    function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s) public {
+    function renewCredential(Attestation memory attestation_, uint8 v, bytes32 r, bytes32 s)
+        public
+        nonReentrant
+        whenNotPaused
+    {
         (address signer, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
         require(cred.registered, "BID::not registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
         require(attestation_.semaphoreIdentityCommitment == cred.commitment, "BID::commitment mismatch");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery pending");
 
@@ -258,7 +275,38 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
-    function submitProof(uint256 context_, CredentialGroupProof memory proof_) public returns (uint256 _score) {
+    function submitProof(uint256 context_, CredentialGroupProof memory proof_)
+        public
+        nonReentrant
+        whenNotPaused
+        returns (uint256 _score)
+    {
+        _score = _submitProof(context_, proof_);
+    }
+
+    /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
+    ///         the sum of their scores.
+    /// @dev Iterates over each proof, accumulates the group's score, and calls _submitProof()
+    ///      which performs full Semaphore verification and consumes nullifiers. If any proof
+    ///      is invalid, the entire transaction reverts.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to submit.
+    /// @return _score The total score across all validated credential groups.
+    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_)
+        public
+        nonReentrant
+        whenNotPaused
+        returns (uint256 _score)
+    {
+        _score = 0;
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            _score += _submitProof(context_, proofs_[i]);
+        }
+    }
+
+    /// @dev Internal implementation of submitProof. Validates the proof, consumes the
+    ///      Semaphore nullifier, and returns the credential group's score from the app's scorer.
+    function _submitProof(uint256 context_, CredentialGroupProof memory proof_) internal returns (uint256 _score) {
         require(
             credentialGroups[proof_.credentialGroupId].status == CredentialGroupStatus.ACTIVE,
             "BID::credential group inactive"
@@ -275,21 +323,6 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit ProofValidated(proof_.credentialGroupId, proof_.appId, proof_.semaphoreProof.nullifier);
 
         _score = IScorer(apps[proof_.appId].scorer).getScore(proof_.credentialGroupId);
-    }
-
-    /// @notice Submits multiple credential group proofs (consuming nullifiers) and returns
-    ///         the sum of their scores.
-    /// @dev Iterates over each proof, accumulates the group's score, and calls submitProof()
-    ///      which performs full Semaphore verification and consumes nullifiers. If any proof
-    ///      is invalid, the entire transaction reverts.
-    /// @param context_ Application-defined context value (see submitProof).
-    /// @param proofs_ Array of credential group proofs to submit.
-    /// @return _score The total score across all validated credential groups.
-    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public returns (uint256 _score) {
-        _score = 0;
-        for (uint256 i = 0; i < proofs_.length; i++) {
-            _score += submitProof(context_, proofs_[i]);
-        }
     }
 
     /// @notice Verifies a credential group proof without consuming the nullifier.
@@ -339,6 +372,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     // ──────────────────────────────────────────────
     //  Owner-only administration
     // ──────────────────────────────────────────────
+
+    /// @notice Pauses the contract, disabling all state-changing user functions.
+    function pause() public onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpauses the contract, re-enabling all state-changing user functions.
+    function unpause() public onlyOwner {
+        _unpause();
+    }
 
     /// @notice Creates a new credential group with the given ID.
     /// @dev The credential group ID is user-defined (not auto-incremented) and must be > 0.
@@ -400,6 +443,15 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         require(duration_ > 0, "BID::zero duration");
         attestationValidityDuration = duration_;
         emit AttestationValidityDurationSet(duration_);
+    }
+
+    /// @notice Updates the registry-level default Merkle tree duration for new Semaphore groups.
+    /// @dev Does not propagate to existing groups. Only affects groups created after this call.
+    /// @param duration_ New duration in seconds (must be > 0).
+    function setDefaultMerkleTreeDuration(uint256 duration_) public onlyOwner {
+        require(duration_ > 0, "BID::zero merkle tree duration");
+        defaultMerkleTreeDuration = duration_;
+        emit DefaultMerkleTreeDurationSet(duration_);
     }
 
     /// @notice Suspends an active credential group, preventing new registrations and proof validations.
@@ -481,14 +533,34 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         emit AppRecoveryTimelockSet(appId_, recoveryTimelock_);
     }
 
-    /// @notice Transfers app admin to a new address.
+    /// @notice Initiates a two-step app admin transfer. The new admin must call acceptAppAdmin() to complete.
     /// @param appId_ The app ID.
     /// @param newAdmin_ The new admin address.
-    function setAppAdmin(uint256 appId_, address newAdmin_) public {
+    function transferAppAdmin(uint256 appId_, address newAdmin_) public {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(newAdmin_ != address(0), "BID::invalid admin address");
+        pendingAppAdmin[appId_] = newAdmin_;
+        emit AppAdminTransferInitiated(appId_, apps[appId_].admin, newAdmin_);
+    }
+
+    /// @notice Completes a two-step app admin transfer. Must be called by the pending admin.
+    /// @param appId_ The app ID.
+    function acceptAppAdmin(uint256 appId_) public {
+        require(pendingAppAdmin[appId_] == msg.sender, "BID::not pending admin");
         address oldAdmin = apps[appId_].admin;
-        apps[appId_].admin = newAdmin_;
-        emit AppAdminTransferred(appId_, oldAdmin, newAdmin_);
+        apps[appId_].admin = msg.sender;
+        delete pendingAppAdmin[appId_];
+        emit AppAdminTransferred(appId_, oldAdmin, msg.sender);
+    }
+
+    /// @notice Updates the default scorer contract used for newly registered apps.
+    /// @dev Only affects future app registrations; existing apps keep their current scorer.
+    /// @param scorer_ The new default scorer address (must not be zero).
+    function setDefaultScorer(address scorer_) public onlyOwner {
+        require(scorer_ != address(0), "BID::invalid scorer address");
+        address oldScorer = defaultScorer;
+        defaultScorer = scorer_;
+        emit DefaultScorerUpdated(oldScorer, scorer_);
     }
 
     /// @notice Sets a custom scorer contract for an app.
@@ -496,8 +568,28 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @param scorer_ The scorer contract address.
     function setAppScorer(uint256 appId_, address scorer_) public {
         require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(scorer_ != address(0), "BID::invalid scorer address");
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
+    }
+
+    /// @notice Sets a per-app Merkle tree duration override and propagates to all existing groups.
+    /// @dev Only callable by the app admin. Setting to 0 clears the override and propagates
+    ///      the registry default to all existing groups for this app.
+    /// @param appId_ The app ID to configure.
+    /// @param merkleTreeDuration_ The Merkle tree duration in seconds (0 = use registry default).
+    function setAppMerkleTreeDuration(uint256 appId_, uint256 merkleTreeDuration_) public {
+        require(apps[appId_].admin == msg.sender, "BID::not app admin");
+        require(apps[appId_].status == AppStatus.ACTIVE, "BID::app not active");
+        appMerkleTreeDuration[appId_] = merkleTreeDuration_;
+
+        uint256 effectiveDuration = merkleTreeDuration_ > 0 ? merkleTreeDuration_ : defaultMerkleTreeDuration;
+        uint256[] storage groupIds = _appSemaphoreGroupIds[appId_];
+        for (uint256 i = 0; i < groupIds.length; i++) {
+            SEMAPHORE.updateGroupMerkleTreeDuration(groupIds[i], effectiveDuration);
+        }
+
+        emit AppMerkleTreeDurationSet(appId_, merkleTreeDuration_);
     }
 
     // ──────────────────────────────────────────────
@@ -517,7 +609,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes32 credentialId_,
         uint256 appId_,
         uint256[] calldata merkleProofSiblings_
-    ) public {
+    ) public nonReentrant whenNotPaused {
         uint256 familyId = credentialGroups[credentialGroupId_].familyId;
         bytes32 registrationHash = _registrationHash(familyId, credentialGroupId_, credentialId_, appId_);
         CredentialRecord storage cred = credentials[registrationHash];
@@ -556,15 +648,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes memory signature_,
         uint256[] calldata merkleProofSiblings_
     ) public {
-        require(signature_.length == 65, "BID::invalid attestation sig length");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
-        }
+        (uint8 v, bytes32 r, bytes32 s) = _unpackSignature(signature_);
         initiateRecovery(attestation_, v, r, s, merkleProofSiblings_);
     }
 
@@ -588,11 +672,12 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         bytes32 r,
         bytes32 s,
         uint256[] calldata merkleProofSiblings_
-    ) public {
+    ) public nonReentrant whenNotPaused {
         (, bytes32 registrationHash) = verifyAttestation(attestation_, v, r, s);
         CredentialRecord storage cred = credentials[registrationHash];
 
         require(cred.registered, "BID::not registered");
+        require(attestation_.semaphoreIdentityCommitment != 0, "BID::invalid commitment");
         require(cred.pendingRecovery.executeAfter == 0, "BID::recovery already pending");
         require(apps[attestation_.appId].recoveryTimelock > 0, "BID::recovery disabled");
 
@@ -647,7 +732,7 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     /// @dev Adds the new commitment to the Semaphore group, updates the stored commitment,
     ///      and clears the pending recovery. Can be called by anyone once the timelock expires.
     /// @param registrationHash_ The registration hash identifying the credential being recovered.
-    function executeRecovery(bytes32 registrationHash_) public {
+    function executeRecovery(bytes32 registrationHash_) public nonReentrant whenNotPaused {
         CredentialRecord storage cred = credentials[registrationHash_];
         RecoveryRequest memory request = cred.pendingRecovery;
         require(request.executeAfter != 0, "BID::no pending recovery");
@@ -694,9 +779,10 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
         );
         require(apps[attestation_.appId].status == AppStatus.ACTIVE, "BID::app not active");
         require(attestation_.registry == address(this), "BID::wrong registry address");
+        require(attestation_.issuedAt <= block.timestamp, "BID::future attestation");
         require(block.timestamp <= attestation_.issuedAt + attestationValidityDuration, "BID::attestation expired");
 
-        (signer,) = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().tryRecover(v, r, s);
+        signer = keccak256(abi.encode(attestation_)).toEthSignedMessageHash().recover(v, r, s);
         require(trustedVerifiers[signer], "BID::untrusted verifier");
 
         uint256 familyId = credentialGroups[attestation_.credentialGroupId].familyId;
@@ -707,6 +793,16 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     // ──────────────────────────────────────────────
     //  Internal helpers
     // ──────────────────────────────────────────────
+
+    /// @dev Unpacks a 65-byte ECDSA signature into its (v, r, s) components.
+    function _unpackSignature(bytes memory signature_) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
+        require(signature_.length == 65, "BID::invalid attestation sig length");
+        assembly {
+            r := mload(add(signature_, 0x20))
+            s := mload(add(signature_, 0x40))
+            v := byte(0, mload(add(signature_, 0x60)))
+        }
+    }
 
     /// @dev Computes the registration hash. For family groups, uses familyId (shared across the
     ///      family) to naturally prevent double registration. For standalone groups, uses credentialGroupId.
@@ -724,16 +820,20 @@ contract CredentialRegistry is ICredentialRegistry, Ownable2Step {
     }
 
     /// @dev Ensures a Semaphore group exists for the (credentialGroupId, appId) pair.
-    ///      Creates one lazily if it doesn't exist yet.
+    ///      Creates one lazily if it doesn't exist yet, using the resolved Merkle tree duration
+    ///      (per-app override if set, otherwise registry default).
     /// @return semaphoreGroupId The Semaphore group ID for the pair.
     function _ensureAppSemaphoreGroup(uint256 credentialGroupId_, uint256 appId_)
         internal
         returns (uint256 semaphoreGroupId)
     {
         if (!appSemaphoreGroupCreated[credentialGroupId_][appId_]) {
-            semaphoreGroupId = SEMAPHORE.createGroup();
+            uint256 appDuration = appMerkleTreeDuration[appId_];
+            uint256 duration = appDuration > 0 ? appDuration : defaultMerkleTreeDuration;
+            semaphoreGroupId = SEMAPHORE.createGroup(address(this), duration);
             appSemaphoreGroups[credentialGroupId_][appId_] = semaphoreGroupId;
             appSemaphoreGroupCreated[credentialGroupId_][appId_] = true;
+            _appSemaphoreGroupIds[appId_].push(semaphoreGroupId);
             emit AppSemaphoreGroupCreated(credentialGroupId_, appId_, semaphoreGroupId);
         } else {
             semaphoreGroupId = appSemaphoreGroups[credentialGroupId_][appId_];

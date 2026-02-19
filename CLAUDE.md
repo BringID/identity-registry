@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BringID Identity Registry — Solidity smart contracts for a privacy-preserving credential system. Users register credentials via verifier-signed attestations, then prove membership using Semaphore zero-knowledge proofs. Each credential group carries a score; `submitProofs()` validates proofs (consuming nullifiers) and returns the aggregate score.
 
-Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). Built with Foundry and Solidity ^0.8.23.
+Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). Built with Foundry and Solidity 0.8.23.
 
 ## Build & Test Commands
 
@@ -110,7 +110,7 @@ identity = new Identity(seed)
 - **Trusted verifiers**: multiple signers supported via `trustedVerifiers` mapping with `addTrustedVerifier`/`removeTrustedVerifier`. Supports TLSN, OAuth, zkPassport, etc.
 - Semaphore groups are created on-chain via the Semaphore contract; the registry maps (credentialGroupId, appId) pairs to Semaphore group IDs via `appSemaphoreGroups`.
 - **Custom app scoring**: Scores are managed by separate Scorer contracts implementing `IScorer`. A `DefaultScorer` (owned by BringID) holds global scores. Each app points to a scorer — `DefaultScorer` by default, or a custom implementation set via `setAppScorer()`. `submitProofs()` and `getScore()` call `apps[appId].scorer.getScore(credentialGroupId)` for each proof.
-- **App self-registration**: Apps are registered via `registerApp(recoveryTimelock)` — public, auto-increment ID, caller becomes admin. App admins manage their own scorer (`setAppScorer`), recovery timelock (`setAppRecoveryTimelock`), admin transfer (`setAppAdmin`), suspension (`suspendApp`), and reactivation (`activateApp`).
+- **App self-registration**: Apps are registered via `registerApp(recoveryTimelock)` — public, auto-increment ID, caller becomes admin. App admins manage their own scorer (`setAppScorer`), recovery timelock (`setAppRecoveryTimelock`), admin transfer (`transferAppAdmin`/`acceptAppAdmin`), suspension (`suspendApp`), and reactivation (`activateApp`).
 - **Credential expiry**: per-credential-group `validityDuration` (seconds, 0 = no expiry). Set at `createCredentialGroup(id, validityDuration, familyId)` time and updatable via `setCredentialGroupValidityDuration()` (owner-only, affects future registrations/renewals only). On registration/renewal, `cred.expiresAt = block.timestamp + validityDuration` (skipped when 0). `removeExpiredCredential()` is public — anyone can call it after expiry to remove the commitment from the Semaphore group and set `cred.expired = true`. **`cred.registered` stays true and `cred.commitment` is NOT cleared** — this enforces commitment continuity on renewal and enables recovery. `cred.pendingRecovery` is cleared to avoid orphaned state. Between expiry and removal, the credential technically still works (removal must be triggered).
 - **Register vs Renew separation**: `registerCredential()` is strictly for first-time registration — it rejects calls where `cred.registered` is true. `renewCredential()` handles all subsequent activations: it requires the same identity commitment and the same credential group as the original registration, re-adds the commitment to Semaphore if `cred.expired` is true, clears the expired flag, and resets the validity duration. Early renewal (before expiry) is allowed, effectively extending the credential. Group changes are NOT allowed via renewal — they must go through recovery (to prevent double-spend with different nullifiers). This prevents a **double-spend attack** where a user could change their commitment or group after expiry to obtain new Semaphore nullifiers for the same scope. Renewal is blocked during pending recovery (`require(cred.pendingRecovery.executeAfter == 0)`).
 - **Attestation verification**: `verifyAttestation()` is a `public view` function that validates all common attestation checks (active credential group/app, registry address, expiry, ECDSA signature from trusted verifier) and returns the recovered signer address. Used internally by `registerCredential()`, `renewCredential()`, and `initiateRecovery()`.
@@ -119,6 +119,28 @@ identity = new Identity(seed)
 - **Recovery on expired+removed credentials**: `initiateRecovery()` works even after a credential has expired and been removed from the Semaphore group. It checks `cred.registered` (which stays true after expiry), so a user who lost their key after expiry can still recover. When `cred.expired` is true, `_executeInitiateRecovery()` skips the `SEMAPHORE.removeMember()` call. `executeRecovery()` clears `cred.expired` and adds the new commitment to the Semaphore group. **Recovery does NOT modify `cred.expiresAt`** — key replacement and credential validity are independent concerns.
 - **Error message convention**: all `require` error strings use a `BID::` prefix (e.g. `"BID::not registered"`, `"BID::app not active"`). This makes BringID errors instantly identifiable in transaction traces and logs. Keep messages short and lowercase after the prefix.
 - **Expiry + recovery guard**: `removeExpiredCredential()` rejects calls when `cred.pendingRecovery.executeAfter != 0` (`"BID::recovery pending"`), preventing a double-remove from the Semaphore group after `initiateRecovery()` has already removed the commitment.
+
+### Trust Model & Governance
+
+**Owner role (single EOA via Ownable2Step, operated by BringID)**
+
+The CredentialRegistry owner has the following powers:
+
+- **Credential group management**: `createCredentialGroup()`, `suspendCredentialGroup()`, `activateCredentialGroup()` — create, pause, and unpause credential groups. Suspending a group blocks new registrations, renewals, recoveries, and proof submissions for that group.
+- **Credential group configuration**: `setCredentialGroupValidityDuration()`, `setCredentialGroupFamily()` — change validity duration and family ID for existing groups. Only affects future registrations/renewals; existing credentials keep their original values.
+- **Trusted verifier management**: `addTrustedVerifier()`, `removeTrustedVerifier()` — control which ECDSA signers can authorize credential attestations. Removing a verifier immediately invalidates all future attestations from that signer.
+- **Attestation validity**: `setAttestationValidityDuration()` — set the maximum age of accepted attestations (default 30 minutes, must be > 0).
+- **Emergency controls**: `pause()`, `unpause()` — halt or resume all state-changing user functions (register, renew, submit proofs, recovery, remove expired). View functions remain available while paused.
+- **Ownership transfer**: two-step via Ownable2Step (`transferOwnership()` + `acceptOwnership()`).
+- **DefaultScorer ownership**: the owner also owns the `DefaultScorer` deployed by the constructor, granting `setScore()` / `setScores()` to set global credential group scores.
+
+**Blast radius of owner compromise**: an attacker with the owner key could suspend all credential groups (halting the protocol), add a malicious verifier (enabling fraudulent credential registrations), remove legitimate verifiers (blocking renewals/registrations), change attestation validity windows, pause the entire contract, or manipulate default scores. They cannot directly modify existing credential records, Semaphore group memberships, or per-app configurations.
+
+**Production hardening (recommended)**: transfer ownership to a Gnosis Safe multisig fronted by a `TimelockController`. This adds multi-party approval and a delay window for all owner operations, giving users time to react to potentially malicious governance actions.
+
+**App admin trust boundary**: app admins (set via `registerApp()`, transferable via two-step `transferAppAdmin()`/`acceptAppAdmin()`) can only manage their own app — `suspendApp()`, `activateApp()`, `setAppRecoveryTimelock()`, `setAppScorer()`. A malicious app admin can set a custom scorer that returns inflated scores or set `recoveryTimelock` to 0 (disabling recovery) for their app. They cannot affect other apps or the global registry state.
+
+**Trusted verifier trust boundary**: verifiers sign attestations that authorize credential registration, renewal, and recovery. A compromised verifier can issue fraudulent attestations for any credential group and any app, enabling unauthorized credential registrations. Verifier compromise is mitigated by: attestation expiry (default 30 minutes), the owner's ability to remove compromised verifiers, and per-credential deduplication via `credentialId` (the verifier derives the same `credentialId` for the same underlying identity, preventing duplicate registrations).
 
 ### Scripts (`script/`)
 
@@ -182,5 +204,5 @@ GitHub Actions (`.github/workflows/test.yml`). Triggered on push, PR, and manual
 - **`[profile.default]`**: `via_ir = true` — production-optimized. Used by CI via-ir build step and for deployment. Local `via_ir` compilation may OOM on machines with ≤16GB RAM.
 - **`[profile.ci]`**: `via_ir = false` — fast builds for formatting, size checks, and tests. CI sets `FOUNDRY_PROFILE=ci` globally.
 - Optimizer with 200 runs
-- Fuzz: 10 runs, 100 max rejections
+- Fuzz: 256 runs, 100 max rejections
 - Without `via_ir`, stack-too-deep errors are avoided by extracting helper functions (e.g. `_makeProof` in tests, `_executeInitiateRecovery` in CredentialRegistry).

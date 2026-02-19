@@ -20,7 +20,7 @@ contract DeployLocal is Script {
 
         SemaphoreVerifier semaphoreVerifier = new SemaphoreVerifier();
         Semaphore semaphore = new Semaphore(ISemaphoreVerifier(address(semaphoreVerifier)));
-        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), deployer);
+        CredentialRegistry registry = new CredentialRegistry(ISemaphore(address(semaphore)), deployer, 1 hours);
 
         // Register a default app (appId = 1), caller = deployer = admin
         uint256 appId = registry.registerApp(0);
