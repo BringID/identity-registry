@@ -56,7 +56,7 @@ contract MyGate is BringIDGated {
 }
 ```
 
-For a fixed non-zero context value, inherit `BringIDGatedWithContext` which stores a `CONTEXT` immutable and overrides the 2-parameter `_submitProofsForRecipient(recipient, proofs)` to use it.
+For a non-zero fixed context, store your own `CONTEXT` immutable and call the 3-parameter overload `_submitProofsForRecipient(recipient, CONTEXT, proofs)` directly.
 
 ### Low-level: `SafeProofConsumer`
 
@@ -92,10 +92,9 @@ The helper computes `expectedMessage(recipient) = uint256(keccak256(abi.encodePa
 ```
 SafeProofConsumer (REGISTRY)          ← message binding only
     │
-BringIDGated (APP_ID)                ← + app ID validation, _submitProofsForRecipient(recipient, proofs) [context=0]
-    │                                   + 3-param _submitProofsForRecipient(recipient, context, proofs)
-    │
-BringIDGatedWithContext (CONTEXT)     ← overrides 2-param to use stored CONTEXT
+BringIDGated (APP_ID)                ← + app ID validation
+                                        _submitProofsForRecipient(recipient, proofs) [context=0]
+                                        _submitProofsForRecipient(recipient, context, proofs) [explicit]
 ```
 
 ### SafeProofConsumer API
@@ -112,12 +111,6 @@ BringIDGatedWithContext (CONTEXT)     ← overrides 2-param to use stored CONTEX
 |----------|-----------|-------------|
 | `_submitProofsForRecipient(recipient, proofs)` | `internal virtual` | Validates app IDs, message binding, submits proofs with context=0. Returns aggregate score. |
 | `_submitProofsForRecipient(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs with explicit context. Returns aggregate score. |
-
-### BringIDGatedWithContext API
-
-| Function | Visibility | Description |
-|----------|-----------|-------------|
-| `_submitProofsForRecipient(recipient, proofs)` | `internal override` | Same as above but uses the stored `CONTEXT` immutable. |
 
 ## Off-Chain Proof Generation
 
@@ -164,4 +157,4 @@ The key principle is the same: the proof's `message` field must commit to all ac
 
 Both layers are needed for safe on-chain proof consumption. The registry enforces scope binding; your contract must enforce message binding.
 
-For most integrations, inherit `BringIDGated` (or `BringIDGatedWithContext` for a fixed non-zero context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.
+For most integrations, inherit `BringIDGated` — it handles both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.

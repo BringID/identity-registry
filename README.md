@@ -48,12 +48,11 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 
 When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gating contract), the Semaphore `scope` is bound to `msg.sender` + `context`. This means any transaction routed through the same contract shares the same scope — an attacker can copy proofs from the mempool and front-run the original caller.
 
-**Solution:** Bind the Semaphore `message` field to the intended recipient. The `@bringid/contracts` package provides three levels of abstraction:
+**Solution:** Bind the Semaphore `message` field to the intended recipient. The `@bringid/contracts` package provides two levels of abstraction:
 
 | Contract | Use when… |
 |----------|-----------|
-| `BringIDGated` | Default context (0), or dynamic context via 3-param overload |
-| `BringIDGatedWithContext` | Fixed context value, need app ID validation |
+| `BringIDGated` | Need app ID validation + proof submission (recommended) |
 | `SafeProofConsumer` | Only need message binding, handle everything else yourself |
 
 ### Quick start — `BringIDGated` (recommended)
@@ -75,42 +74,6 @@ contract MyGate is BringIDGated {
     ) external {
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
         // ... use bringIDScore ...
-    }
-}
-```
-
-### Fixed context — `BringIDGatedWithContext`
-
-When the context value is fixed and non-zero for the lifetime of the contract, inherit `BringIDGatedWithContext` for a 2-parameter `_submitProofsForRecipient` that uses the stored context:
-
-```solidity
-import {BringIDGatedWithContext} from "@bringid/contracts/BringIDGatedWithContext.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
-
-contract MyAirdrop is BringIDGatedWithContext {
-    uint256 public immutable MIN_SCORE;
-
-    error InsufficientScore(uint256 score, uint256 minScore);
-
-    constructor(
-        ICredentialRegistry registry_,
-        uint256 minScore_,
-        uint256 context_,
-        uint256 appId_
-    ) BringIDGatedWithContext(registry_, context_, appId_) {
-        MIN_SCORE = minScore_;
-    }
-
-    function claim(
-        address recipient_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
-    ) external {
-        // Validates app IDs, message binding, submits to registry
-        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
-
-        if (bringIDScore < MIN_SCORE) revert InsufficientScore(bringIDScore, MIN_SCORE);
-
-        // ... distribute tokens to recipient_ ...
     }
 }
 ```

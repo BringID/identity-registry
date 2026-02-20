@@ -108,7 +108,6 @@ contracts/
 ├── Events.sol                   ← event declarations
 ├── SafeProofConsumer.sol        ← abstract base: message binding validation
 ├── BringIDGated.sol             ← abstract base: proof validation + submission
-├── BringIDGatedWithContext.sol  ← convenience layer: stores fixed CONTEXT
 ├── scoring/
 │   ├── DefaultScorer.sol        ← reference IScorer implementation
 │   └── ScorerFactory.sol        ← factory for app admins
@@ -131,8 +130,7 @@ contracts/
 - **Errors.sol** — Custom error definitions (all errors use custom error types, not string reverts).
 - **Events.sol** — Event declarations.
 - **SafeProofConsumer.sol** — Abstract helper for contracts consuming BringID proofs. Validates that the Semaphore proof `message` field is bound to an intended recipient address, preventing mempool front-running.
-- **BringIDGated.sol** — Abstract base for contracts that validate and submit BringID credential proofs. Provides `_submitProofsForRecipient(recipient, proofs)` (2-param, virtual, context defaults to 0) and `_submitProofsForRecipient(recipient, context, proofs)` (3-param, explicit context) which handle app ID validation, message binding, and proof submission. Returns the aggregate `bringIDScore` without enforcing a threshold — consuming contracts handle their own scoring logic. Immutables: `APP_ID`.
-- **BringIDGatedWithContext.sol** — Convenience layer over `BringIDGated` that stores a fixed `CONTEXT` immutable. Overrides the 2-parameter `_submitProofsForRecipient(recipient, proofs)` to use the stored context instead of 0. Inherit this when your contract uses a single, fixed non-zero context value; inherit `BringIDGated` directly when context is 0 or dynamic. Constructor takes `registry_`, `context_`, and `appId_`.
+- **BringIDGated.sol** — Abstract base for contracts that validate and submit BringID credential proofs. Provides `_submitProofsForRecipient(recipient, proofs)` (2-param, context defaults to 0) and `_submitProofsForRecipient(recipient, context, proofs)` (3-param, explicit context) which handle app ID validation, message binding, and proof submission. Returns the aggregate `bringIDScore` without enforcing a threshold — consuming contracts handle their own scoring logic. For a non-zero fixed context, store your own immutable and call the 3-param overload. Immutables: `APP_ID`.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
 - **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
 - **SimpleAirdrop.sol** — Example airdrop contract inheriting `BringIDGated`, demonstrating front-running-resistant proof consumption with the 2-param `_submitProofsForRecipient` (context=0), its own `MIN_SCORE` threshold, and `InsufficientScore` error.

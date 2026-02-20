@@ -28,8 +28,8 @@ abstract contract BringIDGated is SafeProofConsumer {
     }
 
     /// @notice Validates proofs and submits them to the registry using context = 0.
-    /// @dev Calls the 3-parameter version with context_ = 0. Override this in subcontracts
-    ///      that need a different default context (e.g. BringIDGatedWithContext).
+    /// @dev Calls the 3-parameter version with context_ = 0. For a non-zero fixed context,
+    ///      store your own immutable and call the 3-param overload directly.
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param proofs_ Array of credential group proofs to validate and submit.
     /// @return bringIDScore The aggregate score returned by the registry.
