@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry, CredentialGroupProof} from "./interfaces/ICredentialRegistry.sol";
+import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
+import {CredentialProof} from "./interfaces/Types.sol";
 import {IBringIDGated} from "./interfaces/IBringIDGated.sol";
 
 /// @title BringIDGated
@@ -28,8 +29,8 @@ abstract contract BringIDGated is IBringIDGated {
 
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param appId_ The app ID that all proofs must target.
-    constructor(ICredentialRegistry registry_, uint256 appId_) {
-        REGISTRY = registry_;
+    constructor(address registry_, uint256 appId_) {
+        REGISTRY = ICredentialRegistry(registry_);
         APP_ID = appId_;
     }
 
@@ -43,7 +44,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param proof_ The credential group proof to validate and submit.
     /// @return bringIDScore The score returned by the registry for this credential group.
-    function _submitProofForRecipient(address recipient_, CredentialGroupProof calldata proof_)
+    function _submitProofForRecipient(address recipient_, CredentialProof calldata proof_)
         internal
         virtual
         returns (uint256 bringIDScore)
@@ -58,7 +59,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proof_ The credential group proof to validate and submit.
     /// @return bringIDScore The score returned by the registry for this credential group.
-    function _submitProofForRecipient(address recipient_, uint256 context_, CredentialGroupProof calldata proof_)
+    function _submitProofForRecipient(address recipient_, uint256 context_, CredentialProof calldata proof_)
         internal
         returns (uint256 bringIDScore)
     {
@@ -77,7 +78,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param proofs_ Array of credential group proofs to validate and submit.
     /// @return bringIDScore The aggregate score returned by the registry.
-    function _submitProofsForRecipient(address recipient_, CredentialGroupProof[] calldata proofs_)
+    function _submitProofsForRecipient(address recipient_, CredentialProof[] calldata proofs_)
         internal
         virtual
         returns (uint256 bringIDScore)
@@ -92,7 +93,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs to validate and submit.
     /// @return bringIDScore The aggregate score returned by the registry.
-    function _submitProofsForRecipient(address recipient_, uint256 context_, CredentialGroupProof[] calldata proofs_)
+    function _submitProofsForRecipient(address recipient_, uint256 context_, CredentialProof[] calldata proofs_)
         internal
         returns (uint256 bringIDScore)
     {
@@ -102,7 +103,7 @@ abstract contract BringIDGated is IBringIDGated {
             }
         }
 
-        validateProofRecipients(proofs_, recipient_);
+        validateProofsRecipient(proofs_, recipient_);
 
         bringIDScore = REGISTRY.submitProofs(context_, proofs_);
     }
@@ -114,7 +115,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Validates that a single proof's message is bound to the intended recipient.
     /// @param proof_ The credential group proof to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function validateProofRecipient(CredentialGroupProof calldata proof_, address recipient_) public pure {
+    function validateProofRecipient(CredentialProof calldata proof_, address recipient_) public pure {
         if (recipient_ == address(0)) revert ZeroRecipient();
         uint256 expected = expectedMessage(recipient_);
         if (proof_.semaphoreProof.message != expected) {
@@ -125,7 +126,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Validates that all proofs' messages are bound to the intended recipient.
     /// @param proofs_ Array of credential group proofs to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function validateProofRecipients(CredentialGroupProof[] calldata proofs_, address recipient_) public pure {
+    function validateProofsRecipient(CredentialProof[] calldata proofs_, address recipient_) public pure {
         if (recipient_ == address(0)) revert ZeroRecipient();
         uint256 expected = expectedMessage(recipient_);
         for (uint256 i = 0; i < proofs_.length; i++) {
@@ -140,7 +141,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proof_ The credential group proof to verify.
     /// @return True if the proof is valid.
-    function verifyProof(uint256 context_, CredentialGroupProof calldata proof_) public view returns (bool) {
+    function verifyProof(uint256 context_, CredentialProof calldata proof_) public view returns (bool) {
         return REGISTRY.verifyProof(context_, proof_);
     }
 
@@ -149,7 +150,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
-    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (bool) {
+    function verifyProofs(uint256 context_, CredentialProof[] calldata proofs_) public view returns (bool) {
         return REGISTRY.verifyProofs(context_, proofs_);
     }
 
@@ -158,7 +159,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
-    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (uint256) {
+    function getScore(uint256 context_, CredentialProof[] calldata proofs_) public view returns (uint256) {
         return REGISTRY.getScore(context_, proofs_);
     }
 

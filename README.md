@@ -54,16 +54,16 @@ When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gatin
 
 ```solidity
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 
 contract MyGate is BringIDGated {
-    constructor(ICredentialRegistry registry_, uint256 appId_)
+    constructor(address registry_, uint256 appId_)
         BringIDGated(registry_, appId_)
     {}
 
     function doAction(
         address recipient_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
+        CredentialProof[] calldata proofs_
     ) external {
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
         // ... use bringIDScore ...

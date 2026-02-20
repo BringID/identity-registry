@@ -1,20 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
-
-/// @notice A proof binding a Semaphore ZK proof to a specific credential group and app.
-/// @param credentialGroupId The credential group being proven.
-/// @param appId The app identity used (determines which per-app Semaphore group).
-/// @param semaphoreProof The Semaphore zero-knowledge proof (membership + nullifier).
-///        The `semaphoreProof.message` field is not validated by the registry — it is a
-///        free-form field that smart contract consumers SHOULD bind to the intended
-///        recipient or action to prevent mempool front-running. See `BringIDGated`.
-struct CredentialGroupProof {
-    uint256 credentialGroupId;
-    uint256 appId;
-    ISemaphore.SemaphoreProof semaphoreProof;
-}
+import {CredentialProof} from "./Types.sol";
 
 /// @title ICredentialRegistry
 /// @notice Interface for the BringID Credential Registry — a privacy-preserving credential
@@ -174,7 +161,7 @@ interface ICredentialRegistry {
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proof The credential group proof to validate.
     /// @return The credential group's score from the app's scorer.
-    function submitProof(uint256 context_, CredentialGroupProof calldata proof) external returns (uint256);
+    function submitProof(uint256 context_, CredentialProof calldata proof) external returns (uint256);
 
     /// @notice Submits multiple ZK proofs, consuming nullifiers, and returns the aggregate score.
     /// @dev WARNING: The `message` field of each Semaphore proof is NOT validated. Smart contract
@@ -183,25 +170,25 @@ interface ICredentialRegistry {
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to validate.
     /// @return The total score across all validated credential groups.
-    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external returns (uint256);
+    function submitProofs(uint256 context_, CredentialProof[] calldata proofs) external returns (uint256);
 
     /// @notice Verifies a single ZK proof without consuming the nullifier (view-only).
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proof The credential group proof to verify.
     /// @return True if the proof is valid.
-    function verifyProof(uint256 context_, CredentialGroupProof calldata proof) external view returns (bool);
+    function verifyProof(uint256 context_, CredentialProof calldata proof) external view returns (bool);
 
     /// @notice Verifies multiple ZK proofs without consuming nullifiers (view-only).
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
-    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (bool);
+    function verifyProofs(uint256 context_, CredentialProof[] calldata proofs) external view returns (bool);
 
     /// @notice Verifies multiple proofs and returns the aggregate score (view-only).
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
-    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (uint256);
+    function getScore(uint256 context_, CredentialProof[] calldata proofs) external view returns (uint256);
 
     // ── Credential expiry ───────────────────────
 

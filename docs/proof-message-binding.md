@@ -37,16 +37,16 @@ The `@bringid/contracts` package provides `BringIDGated` — an abstract base th
 
 ```solidity
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 
 contract MyGate is BringIDGated {
-    constructor(ICredentialRegistry registry_, uint256 appId_)
+    constructor(address registry_, uint256 appId_)
         BringIDGated(registry_, appId_)
     {}
 
     function doAction(
         address recipient_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
+        CredentialProof[] calldata proofs_
     ) external {
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
         // ... use bringIDScore ...
@@ -61,7 +61,7 @@ For a non-zero fixed context, store your own `CONTEXT` immutable and call the 3-
 | Function | Visibility | Description |
 |----------|-----------|-------------|
 | `validateProofRecipient(proof, recipient)` | `public pure` | Validates a single proof's recipient binding. Reverts `ZeroRecipient` or `WrongProofRecipient`. |
-| `validateProofRecipients(proofs, recipient)` | `public pure` | Validates all proofs in an array. |
+| `validateProofsRecipient(proofs, recipient)` | `public pure` | Validates all proofs in an array. |
 | `_submitProofsForRecipient(recipient, proofs)` | `internal virtual` | Validates app IDs, message binding, submits proofs with context=0. Returns aggregate score. |
 | `_submitProofsForRecipient(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs with explicit context. Returns aggregate score. |
 

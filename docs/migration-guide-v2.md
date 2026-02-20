@@ -157,9 +157,9 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 ```
 The `issuedAt` timestamp is signed by the verifier. The contract enforces `block.timestamp <= issuedAt + attestationValidityDuration` (default 30 minutes, configurable via `setAttestationValidityDuration()`).
 
-**`CredentialGroupProof`** — added `appId`:
+**`CredentialProof`** — added `appId`:
 ```diff
- struct CredentialGroupProof {
+ struct CredentialProof {
      uint256 credentialGroupId;
 +    uint256 appId;
      ISemaphore.SemaphoreProof semaphoreProof;
@@ -240,7 +240,7 @@ All revert conditions now use custom errors (e.g. `NotRegistered()`, `AppNotActi
 - [ ] Update contract addresses to Base Sepolia values above
 - [ ] Update ABI imports — `ICredentialRegistry`, events, and structs have changed
 - [ ] Add `appId` and `issuedAt` to all `Attestation` structs
-- [ ] Add `appId` to all `CredentialGroupProof` structs
+- [ ] Add `appId` to all `CredentialProof` structs
 - [ ] Rename `idHash` → `credentialId` in attestation construction
 - [ ] Replace `joinGroup()` calls with `registerCredential()`
 - [ ] Replace `validateProof()` with `submitProof()` or `verifyProof()` (view)

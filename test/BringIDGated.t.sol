@@ -3,7 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
-import {ICredentialRegistry, CredentialGroupProof} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
+import {ICredentialRegistry} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
+import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {SimpleAirdrop} from "@bringid/contracts/examples/SimpleAirdrop.sol";
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
@@ -58,7 +59,7 @@ contract BringIDGatedTest is Test {
         appId = registry.registerApp(0);
 
         // Deploy SimpleAirdrop pinned to appId
-        airdrop = new SimpleAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, appId);
+        airdrop = new SimpleAirdrop(address(registry), MIN_SCORE, appId);
     }
 
     // --- Helper functions ---
@@ -103,12 +104,12 @@ contract BringIDGatedTest is Test {
         uint256 scope,
         uint256 message,
         uint256 commitment
-    ) internal returns (CredentialGroupProof memory) {
+    ) internal returns (CredentialProof memory) {
         uint256[] memory comms = new uint256[](1);
         comms[0] = commitment;
         (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
             TestUtils.semaphoreProofWithMessage(commitmentKey, scope, message, comms);
-        return CredentialGroupProof({
+        return CredentialProof({
             credentialGroupId: credentialGroupId,
             appId: appId_,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -128,12 +129,12 @@ contract BringIDGatedTest is Test {
         uint256 commitmentKey,
         uint256 scope,
         uint256 commitment
-    ) internal returns (CredentialGroupProof memory) {
+    ) internal returns (CredentialProof memory) {
         uint256[] memory comms = new uint256[](1);
         comms[0] = commitment;
         (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
             TestUtils.semaphoreProof(commitmentKey, scope, comms);
-        return CredentialGroupProof({
+        return CredentialProof({
             credentialGroupId: credentialGroupId,
             appId: appId_,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -158,7 +159,7 @@ contract BringIDGatedTest is Test {
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
+        CredentialProof[] memory proofs = new CredentialProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
         airdrop.claim(alice, proofs);
@@ -171,8 +172,8 @@ contract BringIDGatedTest is Test {
         address bob = makeAddr("bob");
 
         // Build a dummy proof with message bound to bob (wrong recipient for alice claim)
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
-        proofs[0] = CredentialGroupProof({
+        CredentialProof[] memory proofs = new CredentialProof[](1);
+        proofs[0] = CredentialProof({
             credentialGroupId: CREDENTIAL_GROUP_ID,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -193,8 +194,8 @@ contract BringIDGatedTest is Test {
     }
 
     function testClaimRevertsOnZeroRecipient() public {
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
-        proofs[0] = CredentialGroupProof({
+        CredentialProof[] memory proofs = new CredentialProof[](1);
+        proofs[0] = CredentialProof({
             credentialGroupId: CREDENTIAL_GROUP_ID,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -223,7 +224,7 @@ contract BringIDGatedTest is Test {
         uint256 aliceMessage = uint256(keccak256(abi.encodePacked(alice)));
 
         // Alice generates a proof bound to herself
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
+        CredentialProof[] memory proofs = new CredentialProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, aliceMessage, commitment);
 
         // Bob copies the proof and tries to claim for himself — reverts because message is bound to alice
@@ -247,9 +248,9 @@ contract BringIDGatedTest is Test {
         uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
         uint256 wrongMessage = uint256(keccak256(abi.encodePacked(makeAddr("wrong"))));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        CredentialProof[] memory proofs = new CredentialProof[](2);
         // First proof has correct message
-        proofs[0] = CredentialGroupProof({
+        proofs[0] = CredentialProof({
             credentialGroupId: CREDENTIAL_GROUP_ID,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -262,7 +263,7 @@ contract BringIDGatedTest is Test {
             })
         });
         // Second proof has wrong message and different credential group
-        proofs[1] = CredentialGroupProof({
+        proofs[1] = CredentialProof({
             credentialGroupId: credentialGroupId2,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -290,7 +291,7 @@ contract BringIDGatedTest is Test {
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
+        CredentialProof[] memory proofs = new CredentialProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
         // First claim succeeds
@@ -309,8 +310,8 @@ contract BringIDGatedTest is Test {
         address alice = makeAddr("alice");
         uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
-        proofs[0] = CredentialGroupProof({
+        CredentialProof[] memory proofs = new CredentialProof[](1);
+        proofs[0] = CredentialProof({
             credentialGroupId: CREDENTIAL_GROUP_ID,
             appId: attackerAppId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -339,7 +340,7 @@ contract BringIDGatedTest is Test {
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
+        CredentialProof[] memory proofs = new CredentialProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
         vm.expectRevert(abi.encodeWithSelector(SimpleAirdrop.InsufficientScore.selector, MIN_SCORE - 1, MIN_SCORE));
@@ -357,7 +358,7 @@ contract BringIDGatedTest is Test {
         uint256 context = 42;
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
 
-        CredentialGroupProof memory proof = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, commitment);
+        CredentialProof memory proof = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, commitment);
 
         // Off-chain caller can verify through the BringIDGated consumer
         address offChainCaller = makeAddr("off-chain-caller");
@@ -381,7 +382,7 @@ contract BringIDGatedTest is Test {
         uint256 context = 42;
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, appId, commitmentKey2, scope, commitment2);
 
@@ -411,7 +412,7 @@ contract BringIDGatedTest is Test {
         uint256 context = 42;
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
 
-        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, appId, commitmentKey2, scope, commitment2);
 

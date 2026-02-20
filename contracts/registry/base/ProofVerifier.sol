@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "@bringid/contracts/interfaces/Errors.sol";
 import "@bringid/contracts/interfaces/Events.sol";
-import {CredentialGroupProof} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
+import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
@@ -37,7 +37,7 @@ abstract contract ProofVerifier is RegistryStorage {
     ///        - credentialGroupId: which group is being proven
     ///        - appId: which app identity was used (must be active)
     ///        - semaphoreProof: the Semaphore ZK proof (membership + nullifier)
-    function submitProof(uint256 context_, CredentialGroupProof memory proof_)
+    function submitProof(uint256 context_, CredentialProof memory proof_)
         public
         nonReentrant
         whenNotPaused
@@ -60,7 +60,7 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proofs_ Array of credential group proofs to submit.
     /// @return _score The total score across all validated credential groups.
-    function submitProofs(uint256 context_, CredentialGroupProof[] calldata proofs_)
+    function submitProofs(uint256 context_, CredentialProof[] calldata proofs_)
         public
         nonReentrant
         whenNotPaused
@@ -77,7 +77,7 @@ abstract contract ProofVerifier is RegistryStorage {
     ///      Semaphore nullifier, and returns the credential group's score from the app's scorer.
     ///      The `message` field is intentionally not checked here — it is a free-form field
     ///      that callers can use for application-specific binding (e.g. recipient address).
-    function _submitProof(uint256 context_, CredentialGroupProof memory proof_) internal returns (uint256 _score) {
+    function _submitProof(uint256 context_, CredentialProof memory proof_) internal returns (uint256 _score) {
         if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) {
             revert CredentialGroupInactive();
         }
@@ -102,7 +102,7 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proof_ The credential group proof to verify.
     /// @return True if the proof is valid.
-    function verifyProof(uint256 context_, CredentialGroupProof memory proof_) public view returns (bool) {
+    function verifyProof(uint256 context_, CredentialProof memory proof_) public view returns (bool) {
         return _verifyProof(msg.sender, context_, proof_);
     }
 
@@ -111,7 +111,7 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
-    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (bool) {
+    function verifyProofs(uint256 context_, CredentialProof[] calldata proofs_) public view returns (bool) {
         _checkNoDuplicateGroups(proofs_);
         for (uint256 i = 0; i < proofs_.length; i++) {
             if (!_verifyProof(msg.sender, context_, proofs_[i])) return false;
@@ -124,10 +124,10 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return _score The total score across all verified credential groups.
-    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (uint256 _score) {
+    function getScore(uint256 context_, CredentialProof[] calldata proofs_) public view returns (uint256 _score) {
         _checkNoDuplicateGroups(proofs_);
         _score = 0;
-        CredentialGroupProof memory _proof;
+        CredentialProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
             if (!_verifyProof(msg.sender, context_, _proof)) revert InvalidProof();
@@ -137,12 +137,14 @@ abstract contract ProofVerifier is RegistryStorage {
 
     /// @dev Internal implementation of verifyProof. Validates the proof against the given sender
     ///      address for scope computation.
-    function _verifyProof(address sender_, uint256 context_, CredentialGroupProof memory proof_)
+    function _verifyProof(address sender_, uint256 context_, CredentialProof memory proof_)
         internal
         view
         returns (bool)
     {
-        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) return false;
+        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) {
+            return false;
+        }
         if (apps[proof_.appId].status != AppStatus.ACTIVE) return false;
         if (proof_.semaphoreProof.scope != uint256(keccak256(abi.encode(sender_, context_)))) return false;
         if (!appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId]) return false;
@@ -152,7 +154,7 @@ abstract contract ProofVerifier is RegistryStorage {
     }
 
     /// @dev Reverts if any two proofs share the same credentialGroupId, preventing score inflation.
-    function _checkNoDuplicateGroups(CredentialGroupProof[] calldata proofs_) internal pure {
+    function _checkNoDuplicateGroups(CredentialProof[] calldata proofs_) internal pure {
         for (uint256 i = 1; i < proofs_.length; i++) {
             for (uint256 j = 0; j < i; j++) {
                 if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry, CredentialGroupProof} from "../interfaces/ICredentialRegistry.sol";
+import {CredentialProof} from "../interfaces/Types.sol";
 import {BringIDGated} from "../BringIDGated.sol";
 
 /// @title SimpleAirdrop
@@ -33,7 +33,7 @@ contract SimpleAirdrop is BringIDGated {
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param minScore_ Minimum aggregate score to claim.
     /// @param appId_ The app ID that all proofs must target.
-    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 appId_) BringIDGated(registry_, appId_) {
+    constructor(address registry_, uint256 minScore_, uint256 appId_) BringIDGated(registry_, appId_) {
         MIN_SCORE = minScore_;
     }
 
@@ -45,7 +45,7 @@ contract SimpleAirdrop is BringIDGated {
     ///      4. Mark recipient as claimed.
     /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
-    function claim(address recipient_, CredentialGroupProof[] calldata proofs_) external {
+    function claim(address recipient_, CredentialProof[] calldata proofs_) external {
         if (claimed[recipient_]) revert AlreadyClaimed();
 
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
