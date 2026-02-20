@@ -52,7 +52,7 @@ When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gatin
 
 | Contract | Use when… |
 |----------|-----------|
-| `BringIDGated` | Dynamic context value (e.g. per-action), need app ID validation |
+| `BringIDGated` | Default context (0), or dynamic context via 3-param overload |
 | `BringIDGatedWithContext` | Fixed context value, need app ID validation |
 | `SafeProofConsumer` | Only need message binding, handle everything else yourself |
 
@@ -71,18 +71,17 @@ contract MyGate is BringIDGated {
 
     function doAction(
         address recipient_,
-        uint256 context_,
         ICredentialRegistry.CredentialGroupProof[] calldata proofs_
     ) external {
-        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
-        // ... use score ...
+        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
+        // ... use bringIDScore ...
     }
 }
 ```
 
 ### Fixed context — `BringIDGatedWithContext`
 
-When the context value is fixed for the lifetime of the contract, inherit `BringIDGatedWithContext` for a simpler 2-parameter `_submitAndValidate`:
+When the context value is fixed and non-zero for the lifetime of the contract, inherit `BringIDGatedWithContext` for a 2-parameter `_submitProofsForRecipient` that uses the stored context:
 
 ```solidity
 import {BringIDGatedWithContext} from "@bringid/contracts/BringIDGatedWithContext.sol";
@@ -107,9 +106,9 @@ contract MyAirdrop is BringIDGatedWithContext {
         ICredentialRegistry.CredentialGroupProof[] calldata proofs_
     ) external {
         // Validates app IDs, message binding, submits to registry
-        uint256 score = _submitAndValidate(recipient_, proofs_);
+        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
 
-        if (score < MIN_SCORE) revert InsufficientScore(score, MIN_SCORE);
+        if (bringIDScore < MIN_SCORE) revert InsufficientScore(bringIDScore, MIN_SCORE);
 
         // ... distribute tokens to recipient_ ...
     }

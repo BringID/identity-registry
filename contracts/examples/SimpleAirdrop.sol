@@ -44,19 +44,16 @@ contract SimpleAirdrop is BringIDGated {
     ///      3. Check aggregate score meets minimum threshold.
     ///      4. Mark recipient as claimed.
     /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
-    /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
-    function claim(address recipient_, uint256 context_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
-        external
-    {
+    function claim(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_) external {
         if (claimed[recipient_]) revert AlreadyClaimed();
 
-        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
+        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
 
-        if (score < MIN_SCORE) revert InsufficientScore(score, MIN_SCORE);
+        if (bringIDScore < MIN_SCORE) revert InsufficientScore(bringIDScore, MIN_SCORE);
 
         claimed[recipient_] = true;
 
-        emit AirdropClaimed(recipient_, score);
+        emit AirdropClaimed(recipient_, bringIDScore);
     }
 }

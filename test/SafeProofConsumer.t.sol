@@ -36,7 +36,6 @@ contract SafeProofConsumerTest is Test {
     uint256 constant CREDENTIAL_GROUP_ID = 1;
     uint256 constant SCORE = 100;
     uint256 constant MIN_SCORE = 50;
-    uint256 constant CONTEXT = 42;
 
     function setUp() public {
         owner = address(this);
@@ -129,13 +128,13 @@ contract SafeProofConsumerTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), CONTEXT)));
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = airdrop.expectedMessage(alice);
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
 
         assertTrue(airdrop.claimed(alice));
     }
@@ -165,7 +164,7 @@ contract SafeProofConsumerTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, expectedMsg, actualMsg)
         );
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
     }
 
     function testClaimRevertsOnZeroRecipient() public {
@@ -184,7 +183,7 @@ contract SafeProofConsumerTest is Test {
         });
 
         vm.expectRevert(SafeProofConsumer.ZeroRecipient.selector);
-        airdrop.claim(address(0), CONTEXT, proofs);
+        airdrop.claim(address(0), proofs);
     }
 
     function testFrontRunningPrevented() public {
@@ -195,7 +194,7 @@ contract SafeProofConsumerTest is Test {
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
 
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), CONTEXT)));
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 aliceMessage = airdrop.expectedMessage(alice);
 
         // Alice generates a proof bound to herself
@@ -209,10 +208,10 @@ contract SafeProofConsumerTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, expectedMsg, actualMsg)
         );
-        airdrop.claim(bob, CONTEXT, proofs);
+        airdrop.claim(bob, proofs);
 
         // Alice's claim succeeds
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
         assertTrue(airdrop.claimed(alice));
         assertFalse(airdrop.claimed(bob));
     }
@@ -256,7 +255,7 @@ contract SafeProofConsumerTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, correctMessage, wrongMessage)
         );
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
     }
 
     function testExpectedMessageComputation() public {
@@ -271,19 +270,19 @@ contract SafeProofConsumerTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), CONTEXT)));
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = airdrop.expectedMessage(alice);
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
         // First claim succeeds
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
         assertTrue(airdrop.claimed(alice));
 
         // Second claim reverts
         vm.expectRevert(SimpleAirdrop.AlreadyClaimed.selector);
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
     }
 
     function testClaimRevertsOnWrongAppId() public {
@@ -308,7 +307,7 @@ contract SafeProofConsumerTest is Test {
         });
 
         vm.expectRevert(abi.encodeWithSelector(BringIDGated.AppIdMismatch.selector, appId, attackerAppId));
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
     }
 
     function testInsufficientScoreReverts() public {
@@ -320,13 +319,13 @@ contract SafeProofConsumerTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), CONTEXT)));
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
         uint256 message = airdrop.expectedMessage(alice);
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
         vm.expectRevert(abi.encodeWithSelector(SimpleAirdrop.InsufficientScore.selector, MIN_SCORE - 1, MIN_SCORE));
-        airdrop.claim(alice, CONTEXT, proofs);
+        airdrop.claim(alice, proofs);
     }
 }

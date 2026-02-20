@@ -35,7 +35,7 @@ The `@bringid/contracts` package provides three abstraction levels. All handle m
 
 ### Recommended: `BringIDGated`
 
-Handles message binding, app ID validation, and proof submission in a single `_submitAndValidate` call. Your contract only needs to check the returned score.
+Handles message binding, app ID validation, and proof submission in a single `_submitProofsForRecipient` call. Your contract only needs to check the returned score. Context defaults to `0`; use the 3-parameter overload for a custom context.
 
 ```solidity
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
@@ -48,16 +48,15 @@ contract MyGate is BringIDGated {
 
     function doAction(
         address recipient_,
-        uint256 context_,
         ICredentialRegistry.CredentialGroupProof[] calldata proofs_
     ) external {
-        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
-        // ... use score ...
+        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
+        // ... use bringIDScore ...
     }
 }
 ```
 
-For a fixed context value, inherit `BringIDGatedWithContext` which stores a `CONTEXT` immutable and provides a 2-parameter `_submitAndValidate(recipient, proofs)` overload.
+For a fixed non-zero context value, inherit `BringIDGatedWithContext` which stores a `CONTEXT` immutable and overrides the 2-parameter `_submitProofsForRecipient(recipient, proofs)` to use it.
 
 ### Low-level: `SafeProofConsumer`
 
@@ -93,9 +92,10 @@ The helper computes `expectedMessage(recipient) = uint256(keccak256(abi.encodePa
 ```
 SafeProofConsumer (REGISTRY)          ← message binding only
     │
-BringIDGated (APP_ID)                ← + app ID validation, _submitAndValidate(recipient, context, proofs)
+BringIDGated (APP_ID)                ← + app ID validation, _submitProofsForRecipient(recipient, proofs) [context=0]
+    │                                   + 3-param _submitProofsForRecipient(recipient, context, proofs)
     │
-BringIDGatedWithContext (CONTEXT)     ← + fixed context, _submitAndValidate(recipient, proofs)
+BringIDGatedWithContext (CONTEXT)     ← overrides 2-param to use stored CONTEXT
 ```
 
 ### SafeProofConsumer API
@@ -110,13 +110,14 @@ BringIDGatedWithContext (CONTEXT)     ← + fixed context, _submitAndValidate(re
 
 | Function | Visibility | Description |
 |----------|-----------|-------------|
-| `_submitAndValidate(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs. Returns aggregate score. |
+| `_submitProofsForRecipient(recipient, proofs)` | `internal virtual` | Validates app IDs, message binding, submits proofs with context=0. Returns aggregate score. |
+| `_submitProofsForRecipient(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs with explicit context. Returns aggregate score. |
 
 ### BringIDGatedWithContext API
 
 | Function | Visibility | Description |
 |----------|-----------|-------------|
-| `_submitAndValidate(recipient, proofs)` | `internal` | Same as above but uses the stored `CONTEXT` immutable. |
+| `_submitProofsForRecipient(recipient, proofs)` | `internal override` | Same as above but uses the stored `CONTEXT` immutable. |
 
 ## Off-Chain Proof Generation
 
@@ -163,4 +164,4 @@ The key principle is the same: the proof's `message` field must commit to all ac
 
 Both layers are needed for safe on-chain proof consumption. The registry enforces scope binding; your contract must enforce message binding.
 
-For most integrations, inherit `BringIDGated` (or `BringIDGatedWithContext` for a fixed context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.
+For most integrations, inherit `BringIDGated` (or `BringIDGatedWithContext` for a fixed non-zero context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.

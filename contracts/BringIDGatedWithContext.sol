@@ -6,7 +6,7 @@ import {BringIDGated} from "./BringIDGated.sol";
 
 /// @title BringIDGatedWithContext
 /// @notice Convenience layer over `BringIDGated` that stores a fixed context value.
-///         Provides a 2-parameter `_submitAndValidate` overload that passes the stored CONTEXT.
+///         Overrides the 2-parameter `_submitProofsForRecipient` to use the stored CONTEXT.
 /// @dev Inherit this contract when your consuming contract uses a single, fixed context value.
 ///      For dynamic context values, inherit `BringIDGated` directly.
 abstract contract BringIDGatedWithContext is BringIDGated {
@@ -23,11 +23,12 @@ abstract contract BringIDGatedWithContext is BringIDGated {
     /// @notice Validates proofs and submits them using the stored CONTEXT.
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param proofs_ Array of credential group proofs to validate and submit.
-    /// @return score The aggregate score returned by the registry.
-    function _submitAndValidate(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
+    /// @return bringIDScore The aggregate score returned by the registry.
+    function _submitProofsForRecipient(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
         internal
-        returns (uint256 score)
+        override
+        returns (uint256 bringIDScore)
     {
-        score = _submitAndValidate(recipient_, CONTEXT, proofs_);
+        bringIDScore = _submitProofsForRecipient(recipient_, CONTEXT, proofs_);
     }
 }
