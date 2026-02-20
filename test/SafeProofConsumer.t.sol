@@ -18,6 +18,10 @@ import {TestUtils} from "./TestUtils.sol";
 contract SafeProofConsumerTest is Test {
     using ECDSA for bytes32;
 
+    // Pre-computed Semaphore commitment for deterministic test key (avoids FFI per-test).
+    // Generated via: Identity.import(ethers.zeroPadValue(ethers.toBeHex(12345), 32)).commitment
+    uint256 constant COMMITMENT_12345 = 3757495654825671944221025502932027603093002514688471603980596532070551940856;
+
     CredentialRegistry registry;
     DefaultScorer scorer;
     Semaphore semaphore;
@@ -121,7 +125,7 @@ contract SafeProofConsumerTest is Test {
 
     function testClaimWithCorrectMessageBinding() public {
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
@@ -185,7 +189,7 @@ contract SafeProofConsumerTest is Test {
 
     function testFrontRunningPrevented() public {
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
@@ -263,7 +267,7 @@ contract SafeProofConsumerTest is Test {
 
     function testAlreadyClaimedReverts() public {
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
@@ -337,7 +341,7 @@ contract SafeProofConsumerTest is Test {
         scorer.setScore(CREDENTIAL_GROUP_ID, MIN_SCORE - 1);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");

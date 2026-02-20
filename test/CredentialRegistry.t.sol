@@ -64,6 +64,12 @@ contract ReentrantAttacker {
 contract CredentialRegistryTest is Test {
     using ECDSA for bytes32;
 
+    // Pre-computed Semaphore commitments for deterministic test keys (avoids FFI per-test).
+    // Generated via: Identity.import(ethers.zeroPadValue(ethers.toBeHex(key), 32)).commitment
+    uint256 constant COMMITMENT_12345 = 3757495654825671944221025502932027603093002514688471603980596532070551940856;
+    uint256 constant COMMITMENT_67890 = 1627838166670782884016414820331096838803092519983728431519200514911855753278;
+    uint256 constant COMMITMENT_11111 = 17540717969682626270724769168084744907147884769178330051830520727132669392207;
+
     CredentialRegistry registry;
     DefaultScorer scorer;
     Semaphore semaphore;
@@ -537,7 +543,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
             registry: address(registry),
@@ -575,7 +581,7 @@ contract CredentialRegistryTest is Test {
         vm.chainId(31337); // reset to default
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
-        _registerCredential(credentialGroupId, keccak256("cred-1"), id1, TestUtils.semaphoreCommitment(12345));
+        _registerCredential(credentialGroupId, keccak256("cred-1"), id1, COMMITMENT_12345);
     }
 
     // --- JoinGroup tests ---
@@ -585,7 +591,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -602,7 +608,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -619,7 +625,7 @@ contract CredentialRegistryTest is Test {
     function testRegisterCredentialInactiveVerification() public {
         uint256 credentialGroupId = 1;
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -634,7 +640,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
         uint256 inactiveAppId = 999;
 
         ICredentialRegistry.Attestation memory message =
@@ -650,7 +656,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message = ICredentialRegistry.Attestation({
             registry: address(0x123),
@@ -673,7 +679,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -690,8 +696,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // First join succeeds
         ICredentialRegistry.Attestation memory message1 =
@@ -715,8 +721,8 @@ contract CredentialRegistryTest is Test {
         uint256 app2 = registry.registerApp(0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // Register for app 1
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
@@ -730,7 +736,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory message =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -751,7 +757,7 @@ contract CredentialRegistryTest is Test {
         assertFalse(registry.appSemaphoreGroupCreated(credentialGroupId, DEFAULT_APP_ID));
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -763,8 +769,8 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         uint256 groupIdAfterFirst = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
@@ -781,8 +787,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 app2 = registry.registerApp(0);
 
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId, keccak256("id-1"), app2, commitment2);
@@ -800,7 +806,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
@@ -864,7 +870,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
@@ -920,8 +926,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
@@ -957,8 +963,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
@@ -982,7 +988,7 @@ contract CredentialRegistryTest is Test {
         // Don't create credentialGroupId2, it will be inactive
 
         uint256 commitmentKey1 = 12345;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment1 = COMMITMENT_12345;
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
@@ -1066,8 +1072,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1096,8 +1102,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1121,7 +1127,7 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 newCommitment = COMMITMENT_67890;
 
         uint256[] memory siblings = new uint256[](0);
 
@@ -1135,9 +1141,9 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment1 = TestUtils.semaphoreCommitment(67890);
-        uint256 newCommitment2 = TestUtils.semaphoreCommitment(11111);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment1 = COMMITMENT_67890;
+        uint256 newCommitment2 = COMMITMENT_11111;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1153,8 +1159,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1172,8 +1178,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1202,8 +1208,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1252,7 +1258,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1267,7 +1273,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1283,7 +1289,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1313,7 +1319,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1342,7 +1348,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1358,7 +1364,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1385,8 +1391,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
 
@@ -1407,8 +1413,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1438,8 +1444,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1463,8 +1469,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1509,8 +1515,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1531,8 +1537,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1563,8 +1569,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
 
@@ -1584,7 +1590,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(11111);
+        uint256 commitment = COMMITMENT_11111;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1613,7 +1619,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1647,7 +1653,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1676,7 +1682,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1703,7 +1709,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1730,7 +1736,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 30 days, 0);
 
         bytes32 credentialId = keccak256("never-registered");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         vm.expectRevert(NotRegistered.selector);
         _renewCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -1741,8 +1747,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 30 days, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment1);
 
@@ -1756,8 +1762,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1775,7 +1781,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1795,7 +1801,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1877,7 +1883,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory att = ICredentialRegistry.Attestation({
             registry: address(registry),
@@ -1899,7 +1905,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory att =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -1918,7 +1924,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -1939,8 +1945,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -1964,8 +1970,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(2, 60 days, 1);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // Register in group 1 succeeds
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
@@ -1981,8 +1987,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(4, 30 days, 2);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // Register in family 1
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
@@ -1997,8 +2003,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(11, 180 days, 0);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // Register in group 10
         _registerCredential(10, credentialId, DEFAULT_APP_ID, commitment1);
@@ -2012,8 +2018,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(2, 60 days, 1);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
 
@@ -2031,8 +2037,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -2065,7 +2071,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(2, 60 days, 1);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -2080,8 +2086,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, 1 days);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -2099,8 +2105,8 @@ contract CredentialRegistryTest is Test {
         uint256 app2 = registry.registerApp(0);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         // Same credentialId + same group, different apps — succeeds (appId is in the hash)
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment1);
@@ -2140,7 +2146,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(2, 60 days, 1);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -2219,7 +2225,7 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
@@ -2233,7 +2239,7 @@ contract CredentialRegistryTest is Test {
 
         registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 2 minutes);
 
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
@@ -2247,8 +2253,8 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId1, 0, 0);
         registry.createCredentialGroup(credentialGroupId2, 0, 0);
 
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
 
@@ -2276,7 +2282,7 @@ contract CredentialRegistryTest is Test {
 
         registry.setAppMerkleTreeDuration(DEFAULT_APP_ID, 10 seconds);
 
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
@@ -2294,7 +2300,7 @@ contract CredentialRegistryTest is Test {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         uint256 semaphoreGroupId = registry.appSemaphoreGroups(credentialGroupId, DEFAULT_APP_ID);
@@ -2319,8 +2325,8 @@ contract CredentialRegistryTest is Test {
         uint256[] memory ids = registry.getAppSemaphoreGroupIds(DEFAULT_APP_ID);
         assertEq(ids.length, 0);
 
-        uint256 commitment1 = TestUtils.semaphoreCommitment(12345);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(67890);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
 
@@ -2335,7 +2341,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(2, 60 days, 1);
 
         bytes32 credentialId = keccak256("same-user");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(1, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -2359,7 +2365,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
@@ -2430,7 +2436,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
@@ -2479,8 +2485,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
@@ -2504,7 +2510,7 @@ contract CredentialRegistryTest is Test {
         // Don't create group 2 — it will be inactive
 
         uint256 commitmentKey1 = 12345;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment1 = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
 
@@ -2544,8 +2550,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
@@ -2570,7 +2576,7 @@ contract CredentialRegistryTest is Test {
         // Don't create group 2
 
         uint256 commitmentKey1 = 12345;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment1 = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
 
@@ -2604,7 +2610,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         // Create attacker contract and set up proof with attacker as the scope origin
@@ -2645,7 +2651,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         ICredentialRegistry.Attestation memory att =
             _createAttestation(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
@@ -2673,7 +2679,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, validityDuration, 0);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 commitment = TestUtils.semaphoreCommitment(12345);
+        uint256 commitment = COMMITMENT_12345;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, commitment);
 
@@ -2700,8 +2706,8 @@ contract CredentialRegistryTest is Test {
         registry.setAppRecoveryTimelock(DEFAULT_APP_ID, recoveryTimelock);
 
         bytes32 credentialId = keccak256("blinded-id");
-        uint256 oldCommitment = TestUtils.semaphoreCommitment(12345);
-        uint256 newCommitment = TestUtils.semaphoreCommitment(67890);
+        uint256 oldCommitment = COMMITMENT_12345;
+        uint256 newCommitment = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId, credentialId, DEFAULT_APP_ID, oldCommitment);
 
@@ -3112,7 +3118,7 @@ contract CredentialRegistryTest is Test {
         registry.createCredentialGroup(credentialGroupId, 0, 0);
 
         uint256 commitmentKey = 12345;
-        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        uint256 commitment = COMMITMENT_12345;
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         // The contract that will eventually call submitProof
@@ -3143,8 +3149,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
@@ -3176,8 +3182,8 @@ contract CredentialRegistryTest is Test {
 
         uint256 commitmentKey1 = 12345;
         uint256 commitmentKey2 = 67890;
-        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
-        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
 
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
