@@ -7,7 +7,7 @@ import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {SafeAirdrop} from "@bringid/contracts/examples/SafeAirdrop.sol";
 import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
-import {ScoreGated} from "@bringid/contracts/ScoreGated.sol";
+import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
@@ -307,7 +307,7 @@ contract SafeProofConsumerTest is Test {
             })
         });
 
-        vm.expectRevert(abi.encodeWithSelector(ScoreGated.AppIdMismatch.selector, appId, attackerAppId));
+        vm.expectRevert(abi.encodeWithSelector(BringIDGated.AppIdMismatch.selector, appId, attackerAppId));
         airdrop.claim(alice, proofs);
     }
 
@@ -332,7 +332,7 @@ contract SafeProofConsumerTest is Test {
             });
         }
 
-        vm.expectRevert(ScoreGated.TooManyProofs.selector);
+        vm.expectRevert(BringIDGated.TooManyProofs.selector);
         airdrop.claim(alice, proofs);
     }
 
@@ -351,7 +351,7 @@ contract SafeProofConsumerTest is Test {
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
 
-        vm.expectRevert(abi.encodeWithSelector(ScoreGated.InsufficientScore.selector, MIN_SCORE - 1, MIN_SCORE));
+        vm.expectRevert(abi.encodeWithSelector(SafeAirdrop.InsufficientScore.selector, MIN_SCORE - 1, MIN_SCORE));
         airdrop.claim(alice, proofs);
     }
 }

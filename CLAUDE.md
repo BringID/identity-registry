@@ -107,12 +107,13 @@ contracts/
 ├── Errors.sol                   ← custom error definitions
 ├── Events.sol                   ← event declarations
 ├── SafeProofConsumer.sol        ← abstract base: message binding validation
-├── ScoreGated.sol               ← abstract base: score threshold gating
+├── BringIDGated.sol             ← abstract base: proof validation + submission
+├── BringIDGatedWithContext.sol  ← convenience layer: stores fixed CONTEXT
 ├── scoring/
 │   ├── DefaultScorer.sol        ← reference IScorer implementation
 │   └── ScorerFactory.sol        ← factory for app admins
 └── examples/
-    └── SafeAirdrop.sol          ← reference consumer using ScoreGated
+    └── SafeAirdrop.sol          ← reference consumer using BringIDGatedWithContext
 ```
 
 - **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
@@ -120,10 +121,11 @@ contracts/
 - **Errors.sol** — Custom error definitions (all errors use custom error types, not string reverts).
 - **Events.sol** — Event declarations.
 - **SafeProofConsumer.sol** — Abstract helper for contracts consuming BringID proofs. Validates that the Semaphore proof `message` field is bound to an intended recipient address, preventing mempool front-running.
-- **ScoreGated.sol** — Abstract base for contracts that gate access behind a minimum credential score. Provides `_submitAndValidate(recipient, proofs)` which handles proof count limit, app ID validation, message binding, proof submission, and score threshold check. Immutables: `MIN_SCORE`, `CONTEXT`, `APP_ID`, `MAX_PROOFS`.
+- **BringIDGated.sol** — Abstract base for contracts that validate and submit BringID credential proofs. Provides `_submitAndValidate(recipient, context, proofs)` which handles proof count limit, app ID validation, message binding, and proof submission. Returns the aggregate score without enforcing a threshold — consuming contracts handle their own scoring logic. Immutables: `APP_ID`, `MAX_PROOFS`.
+- **BringIDGatedWithContext.sol** — Convenience layer over `BringIDGated` that stores a fixed `CONTEXT` immutable. Provides a 2-parameter `_submitAndValidate(recipient, proofs)` overload that passes the stored context. Inherit this when your contract uses a single, fixed context value; inherit `BringIDGated` directly for dynamic context values.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
 - **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
-- **SafeAirdrop.sol** — Example airdrop contract inheriting `ScoreGated`, demonstrating front-running-resistant proof consumption.
+- **SafeAirdrop.sol** — Example airdrop contract inheriting `BringIDGatedWithContext`, demonstrating front-running-resistant proof consumption with its own `MIN_SCORE` threshold and `InsufficientScore` error.
 
 ### Core implementation (`src/registry/`)
 

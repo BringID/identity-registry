@@ -29,14 +29,53 @@ If the recipient address were part of `context`, it would change the `scope`, wh
 
 The `message` field is the correct place for recipient binding because it is verified by the ZK proof (the prover committed to this value) but does **not** affect the nullifier.
 
-## The Solution: Message Binding via `SafeProofConsumer`
+## The Solution: Message Binding
 
-The `SafeProofConsumer` abstract contract provides a ready-made pattern:
+The `@bringid/contracts` package provides three abstraction levels. All handle message binding; the higher-level contracts also enforce app ID matching and proof count limits.
+
+### Recommended: `BringIDGatedWithContext`
+
+Handles message binding, app ID validation, proof count limits, and proof submission in a single `_submitAndValidate` call. Your contract only needs to check the returned score.
+
+```solidity
+import {BringIDGatedWithContext} from "@bringid/contracts/BringIDGatedWithContext.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+
+contract MyAirdrop is BringIDGatedWithContext {
+    uint256 public immutable MIN_SCORE;
+    error InsufficientScore(uint256 score, uint256 minScore);
+
+    constructor(
+        ICredentialRegistry registry_,
+        uint256 minScore_,
+        uint256 context_,
+        uint256 appId_,
+        uint256 maxProofs_
+    ) BringIDGatedWithContext(registry_, context_, appId_, maxProofs_) {
+        MIN_SCORE = minScore_;
+    }
+
+    function claim(
+        address recipient_,
+        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
+    ) external {
+        uint256 score = _submitAndValidate(recipient_, proofs_);
+        if (score < MIN_SCORE) revert InsufficientScore(score, MIN_SCORE);
+        // ... distribute tokens to recipient_ ...
+    }
+}
+```
+
+For dynamic context values, inherit `BringIDGated` directly and pass context as a parameter to the 3-argument `_submitAndValidate(recipient, context, proofs)`.
+
+### Low-level: `SafeProofConsumer`
+
+For full control (custom validation logic, non-standard message semantics), inherit `SafeProofConsumer` and call the registry directly:
 
 ```solidity
 import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
 
-contract MyAirdrop is SafeProofConsumer {
+contract MyCustomConsumer is SafeProofConsumer {
     constructor(ICredentialRegistry registry_)
         SafeProofConsumer(registry_)
     {}
@@ -58,13 +97,35 @@ contract MyAirdrop is SafeProofConsumer {
 
 The helper computes `expectedMessage(recipient) = uint256(keccak256(abi.encodePacked(recipient)))` and checks that every proof's `semaphoreProof.message` matches.
 
-### API
+### Contract hierarchy
+
+```
+SafeProofConsumer (REGISTRY)          ← message binding only
+    │
+BringIDGated (APP_ID, MAX_PROOFS)    ← + app ID validation, proof count, _submitAndValidate(recipient, context, proofs)
+    │
+BringIDGatedWithContext (CONTEXT)     ← + fixed context, _submitAndValidate(recipient, proofs)
+```
+
+### SafeProofConsumer API
 
 | Function | Visibility | Description |
 |----------|-----------|-------------|
 | `expectedMessage(address)` | `public pure` | Returns the expected message value for a recipient. Use off-chain to set the message when generating proofs. |
 | `_validateMessageBinding(proof, recipient)` | `internal pure` | Validates a single proof's message binding. Reverts `ZeroRecipient` or `MessageBindingMismatch`. |
 | `_validateMessageBindings(proofs, recipient)` | `internal pure` | Validates all proofs in an array. |
+
+### BringIDGated API
+
+| Function | Visibility | Description |
+|----------|-----------|-------------|
+| `_submitAndValidate(recipient, context, proofs)` | `internal` | Validates proof count, app IDs, message binding, submits proofs. Returns aggregate score. |
+
+### BringIDGatedWithContext API
+
+| Function | Visibility | Description |
+|----------|-----------|-------------|
+| `_submitAndValidate(recipient, proofs)` | `internal` | Same as above but uses the stored `CONTEXT` immutable. |
 
 ## Off-Chain Proof Generation
 
@@ -110,3 +171,5 @@ The key principle is the same: the proof's `message` field must commit to all ac
 | Message binding (`hash(recipient)`) | Mempool front-running within the same contract | `message` |
 
 Both layers are needed for safe on-chain proof consumption. The registry enforces scope binding; your contract must enforce message binding.
+
+For most integrations, inherit `BringIDGatedWithContext` (or `BringIDGated` for dynamic context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.
