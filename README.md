@@ -56,17 +56,29 @@ When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gatin
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
 import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 
-contract MyGate is BringIDGated {
+contract MyAirdrop is BringIDGated {
+    uint256 constant MIN_SCORE = 100; // required reputation threshold
+
     constructor(address registry_, uint256 appId_)
         BringIDGated(registry_, appId_)
     {}
 
-    function doAction(
+    // proofs_ are generated off-chain via BringID SDK.
+    // Each proof is a zero-knowledge attestation of a verified credential
+    // (e.g. GitHub account, Farcaster profile, KYC) — proving ownership
+    // without revealing the underlying identity.
+    function claim(
         address recipient_,
         CredentialProof[] calldata proofs_
     ) external {
+        // Validates proofs, prevents reuse, aggregates score from registry
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
-        // ... use bringIDScore ...
+
+        // Enforce a minimum score
+        if (bringIDScore < MIN_SCORE) revert InsufficientScore();
+
+        // Transfer tokens
+        ...
     }
 }
 ```
