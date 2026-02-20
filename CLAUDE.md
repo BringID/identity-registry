@@ -97,16 +97,17 @@ identity = new Identity(seed)
 
 ### `@bringid/contracts` package (`contracts/`)
 
-The `contracts/` directory contains all Solidity source code and is also the public API surface, published as the `@bringid/contracts` npm package. External developers import from here (e.g. `import "@bringid/contracts/ICredentialRegistry.sol"`). Internal implementation lives in `contracts/registry/` (excluded from npm via `files` in `package.json`). All internal imports use `@bringid/contracts/...` paths (resolved by the `@bringid/contracts/=contracts/` remapping in `remappings.txt`).
+The `contracts/` directory contains all Solidity source code and is also the public API surface, published as the `@bringid/contracts` npm package. External developers import from here (e.g. `import "@bringid/contracts/interfaces/ICredentialRegistry.sol"`). Internal implementation lives in `contracts/registry/` (excluded from npm via `files` in `package.json`). All internal imports use `@bringid/contracts/...` paths (resolved by the `@bringid/contracts/=contracts/` remapping in `remappings.txt`).
 
 ```
 contracts/
 ├── package.json                 ← npm package manifest
-├── ICredentialRegistry.sol      ← full interface + all data types
-├── IScorer.sol                  ← scorer extension interface
-├── Errors.sol                   ← custom error definitions
-├── Events.sol                   ← event declarations
 ├── BringIDGated.sol             ← abstract base: message binding + proof validation + submission
+├── interfaces/
+│   ├── ICredentialRegistry.sol  ← full interface + all data types
+│   ├── IScorer.sol              ← scorer extension interface
+│   ├── Errors.sol               ← custom error definitions
+│   └── Events.sol               ← event declarations
 ├── scoring/
 │   ├── DefaultScorer.sol        ← reference IScorer implementation
 │   └── ScorerFactory.sol        ← factory for app admins
@@ -124,10 +125,10 @@ contracts/
         └── AppManager.sol
 ```
 
-- **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
-- **IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`, `getScores(uint256[] credentialGroupIds) → uint256[]`, `getAllScores() → (uint256[], uint256[])`.
-- **Errors.sol** — Custom error definitions (all errors use custom error types, not string reverts).
-- **Events.sol** — Event declarations.
+- **interfaces/ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
+- **interfaces/IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`, `getScores(uint256[] credentialGroupIds) → uint256[]`, `getAllScores() → (uint256[], uint256[])`.
+- **interfaces/Errors.sol** — Custom error definitions (all errors use custom error types, not string reverts).
+- **interfaces/Events.sol** — Event declarations.
 - **BringIDGated.sol** — Abstract base for contracts that validate and submit BringID credential proofs. Validates that the Semaphore proof `message` field is bound to an intended recipient address (preventing mempool front-running) via `expectedMessage()`, `_validateMessageBinding()`, and `_validateMessageBindings()`. Provides `_submitProofsForRecipient(recipient, proofs)` (2-param, context defaults to 0) and `_submitProofsForRecipient(recipient, context, proofs)` (3-param, explicit context) which handle app ID validation, message binding, and proof submission. Returns the aggregate `bringIDScore` without enforcing a threshold — consuming contracts handle their own scoring logic. For a non-zero fixed context, store your own immutable and call the 3-param overload. Immutables: `REGISTRY`, `APP_ID`. Errors: `MessageBindingMismatch`, `ZeroRecipient`, `AppIdMismatch`.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
 - **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
@@ -155,7 +156,7 @@ contracts/
 - **Attestation expiry**: attestations include an `issuedAt` timestamp signed by the verifier. The contract enforces `block.timestamp <= issuedAt + attestationValidityDuration` (default 30 minutes). The owner can update the duration via `setAttestationValidityDuration()` (must be > 0).
 - **Key recovery and group changes**: per-app timelocked commitment replacement. When a user loses their wallet, they re-authenticate via any supported verification flow (zkTLS, OAuth, zkPassport, zkKYC, etc.); the verifier re-derives the same `credentialId` and signs an attestation with a new commitment and the same `appId`. `initiateRecovery()` removes the old commitment from the per-app Semaphore group immediately and queues the new one behind the app's `recoveryTimelock`. `executeRecovery()` adds the new commitment after the timelock expires and updates `cred.credentialGroupId`. `initiateRecovery()` also supports group changes within the same family (e.g. upgrading from Farcaster Low to High) — the attestation can target a different group as long as both groups share the same familyId. The timelock prevents double-spend by ensuring no valid commitment exists during the transition. App admin sets `recoveryTimelock` at `registerApp()` time (0 = disabled); can toggle on/off later via `setAppRecoveryTimelock()`. The `Attestation` struct includes `appId` for timelock lookup and per-app group resolution. `cred.commitment` tracks the current commitment per registration hash; `cred.pendingRecovery` tracks in-flight recovery requests.
 - **Recovery on expired+removed credentials**: `initiateRecovery()` works even after a credential has expired and been removed from the Semaphore group. It checks `cred.registered` (which stays true after expiry), so a user who lost their key after expiry can still recover. When `cred.expired` is true, `_executeInitiateRecovery()` skips the `SEMAPHORE.removeMember()` call. `executeRecovery()` clears `cred.expired` and adds the new commitment to the Semaphore group. **Recovery does NOT modify `cred.expiresAt`** — key replacement and credential validity are independent concerns.
-- **Custom errors**: all revert conditions use custom error types defined in `contracts/Errors.sol` (e.g. `NotRegistered()`, `AppNotActive()`). No string-based `require` messages.
+- **Custom errors**: all revert conditions use custom error types defined in `contracts/interfaces/Errors.sol` (e.g. `NotRegistered()`, `AppNotActive()`). No string-based `require` messages.
 - **Expiry + recovery guard**: `removeExpiredCredential()` rejects calls when `cred.pendingRecovery.executeAfter != 0` (`"BID::recovery pending"`), preventing a double-remove from the Semaphore group after `initiateRecovery()` has already removed the commitment.
 
 ### Trust Model & Governance

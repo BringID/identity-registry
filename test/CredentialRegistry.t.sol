@@ -3,8 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
-import {IScorer} from "@bringid/contracts/IScorer.sol";
+import {ICredentialRegistry} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
+import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
@@ -12,8 +12,8 @@ import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVer
 import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
-import "@bringid/contracts/Events.sol";
-import "@bringid/contracts/Errors.sol";
+import "@bringid/contracts/interfaces/Events.sol";
+import "@bringid/contracts/interfaces/Errors.sol";
 
 contract MockScorer is IScorer {
     mapping(uint256 => uint256) public scores;

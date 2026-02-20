@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry} from "./ICredentialRegistry.sol";
+import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
 
 /// @title BringIDGated
 /// @notice Abstract base for contracts that validate and submit BringID credential proofs.

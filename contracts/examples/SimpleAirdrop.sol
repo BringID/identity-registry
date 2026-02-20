@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry} from "../ICredentialRegistry.sol";
+import {ICredentialRegistry} from "../interfaces/ICredentialRegistry.sol";
 import {BringIDGated} from "../BringIDGated.sol";
 
 /// @title SimpleAirdrop

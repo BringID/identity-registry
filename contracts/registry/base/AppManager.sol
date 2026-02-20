@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "@bringid/contracts/Errors.sol";
-import "@bringid/contracts/Events.sol";
+import "@bringid/contracts/interfaces/Errors.sol";
+import "@bringid/contracts/interfaces/Events.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
 /// @title AppManager

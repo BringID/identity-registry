@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {ICredentialRegistry as IRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {ICredentialRegistry as IRegistry} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract Generate is Script {
