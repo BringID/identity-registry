@@ -65,6 +65,7 @@ abstract contract ProofVerifier is RegistryStorage {
         whenNotPaused
         returns (uint256 _score)
     {
+        _checkNoDuplicateGroups(proofs_);
         _score = 0;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _score += _submitProof(context_, proofs_[i]);
@@ -128,12 +129,24 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return _score The total score across all verified credential groups.
     function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (uint256 _score) {
+        _checkNoDuplicateGroups(proofs_);
         _score = 0;
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
             if (!verifyProof(context_, _proof)) revert InvalidProof();
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
+        }
+    }
+
+    /// @dev Reverts if any two proofs share the same credentialGroupId, preventing score inflation.
+    function _checkNoDuplicateGroups(CredentialGroupProof[] calldata proofs_) internal pure {
+        for (uint256 i = 1; i < proofs_.length; i++) {
+            for (uint256 j = 0; j < i; j++) {
+                if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
+                    revert DuplicateCredentialGroup();
+                }
+            }
         }
     }
 }

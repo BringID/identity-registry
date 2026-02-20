@@ -20,6 +20,9 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @notice The app ID that all proofs must target.
     uint256 public immutable APP_ID;
 
+    /// @notice Maximum number of proofs accepted per claim.
+    uint256 public immutable MAX_PROOFS;
+
     /// @notice Tracks which addresses have already claimed.
     mapping(address => bool) public claimed;
 
@@ -30,6 +33,12 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param score The actual score returned by the registry.
     /// @param minScore The required minimum score.
     error InsufficientScore(uint256 score, uint256 minScore);
+
+    /// @notice Thrown when the number of proofs exceeds `MAX_PROOFS`.
+    error TooManyProofs();
+
+    /// @notice Thrown when two proofs share the same credential group ID.
+    error DuplicateCredentialGroup();
 
     /// @notice Thrown when a proof targets an unexpected app ID.
     /// @param expected The expected app ID.
@@ -45,12 +54,14 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param minScore_ Minimum aggregate score to claim.
     /// @param context_ Application-defined context value for scope computation.
     /// @param appId_ The app ID that all proofs must target.
-    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_, uint256 appId_)
+    /// @param maxProofs_ Maximum number of proofs accepted per claim.
+    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_, uint256 appId_, uint256 maxProofs_)
         SafeProofConsumer(registry_)
     {
         MIN_SCORE = minScore_;
         CONTEXT = context_;
         APP_ID = appId_;
+        MAX_PROOFS = maxProofs_;
     }
 
     /// @notice Claims an airdrop by submitting message-bound credential proofs.
@@ -62,6 +73,16 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
     function claim(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_) external {
+        if (proofs_.length > MAX_PROOFS) revert TooManyProofs();
+
+        for (uint256 i = 1; i < proofs_.length; i++) {
+            for (uint256 j = 0; j < i; j++) {
+                if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
+                    revert DuplicateCredentialGroup();
+                }
+            }
+        }
+
         if (claimed[recipient_]) revert AlreadyClaimed();
 
         for (uint256 i = 0; i < proofs_.length; i++) {
