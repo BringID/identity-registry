@@ -231,9 +231,9 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 
 The constructor now deploys a `DefaultScorer` automatically and adds the provided address as the first trusted verifier.
 
-### Error messages
+### Custom errors
 
-All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered"`, `"BID::app not active"`). If your integration matches on revert reason strings, update them accordingly.
+All revert conditions now use custom errors (e.g. `NotRegistered()`, `AppNotActive()`, `AlreadyRegistered()`) instead of string-based `require` messages. Custom errors are defined in `@bringid/contracts/Errors.sol`. If your integration matches on revert selectors, update to the new custom error selectors.
 
 ## Quick Migration Checklist
 
@@ -251,4 +251,4 @@ All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered
 - [ ] Account for `credentialGroupId` in `CredentialRecord` — tracks which group within the family
 - [ ] For group changes within a family, use `initiateRecovery`/`executeRecovery` (not `renewCredential`)
 - [ ] If listening to events, update to new event names and signatures
-- [ ] If matching on revert reason strings, update to `BID::` prefixed messages
+- [ ] If matching on revert selectors, update to custom errors defined in `@bringid/contracts/Errors.sol`

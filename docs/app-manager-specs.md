@@ -199,7 +199,7 @@ No separate `CustomScorer` contract — `DefaultScorer` handles both use cases.
 
 **Benefits over raw bytecode deploy:** discoverable (index `ScorerCreated` events), simpler UX (single function call vs raw deploy), verifiable on block explorer.
 
-The `ScorerFactory` contract lives in this repo (`credential-registry`) under `src/scoring/` and is deployed alongside the other contracts.
+The `ScorerFactory` contract lives in this repo (`credential-registry`) under `contracts/scoring/` and is deployed alongside the other contracts.
 
 ---
 
@@ -226,13 +226,13 @@ Query strategy:
 
 ## Error Handling
 
-Map contract revert strings to user-friendly messages:
+Map custom error reverts to user-friendly messages:
 
-| Revert | User Message |
+| Error | User Message |
 |---|---|
-| `BID::not app admin` | You are not the admin of this app. |
-| `BID::app not active` | This app is currently suspended. |
-| `BID::app not suspended` | This app is already active. |
+| `NotAppAdmin()` | You are not the admin of this app. |
+| `AppNotActive()` | This app is currently suspended. |
+| `AppNotSuspended()` | This app is already active. |
 
 ---
 

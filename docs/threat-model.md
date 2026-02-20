@@ -27,14 +27,14 @@ This ensures Semaphore nullifier continuity: a user cannot obtain fresh nullifie
 
 ### Family Constraint
 
-Within a family (familyId > 0), a user can hold at most one active credential per app. This is enforced structurally: all groups in a family share the same registration hash, so `registerCredential()` will revert with `"BID::already registered"` for any second registration in the same family. Group changes within a family must go through `initiateRecovery()` / `executeRecovery()`, which enforces the recovery timelock.
+Within a family (familyId > 0), a user can hold at most one active credential per app. This is enforced structurally: all groups in a family share the same registration hash, so `registerCredential()` will revert with `AlreadyRegistered()` for any second registration in the same family. Group changes within a family must go through `initiateRecovery()` / `executeRecovery()`, which enforces the recovery timelock.
 
 ### Scope Binding
 
 Semaphore proof scopes are bound to `keccak256(abi.encode(msg.sender, context))`. This is enforced in `_submitProof()` and `verifyProof()`:
 
 ```
-require(proof.semaphoreProof.scope == uint256(keccak256(abi.encode(msg.sender, context))), "BID::scope mismatch")
+if (proof.semaphoreProof.scope != uint256(keccak256(abi.encode(msg.sender, context)))) revert ScopeMismatch();
 ```
 
 A proof generated for one caller cannot be submitted by a different caller. A proof generated for one context cannot be reused for a different context by the same caller.
@@ -50,7 +50,7 @@ Key recovery is a two-phase process with an enforced delay:
 - `initiateRecovery()` immediately removes the old commitment from the Semaphore group and queues the new commitment with `executeAfter = block.timestamp + apps[appId].recoveryTimelock`.
 - `executeRecovery()` requires `block.timestamp >= request.executeAfter`.
 - During the timelock window, no valid commitment exists in the Semaphore group for this credential, preventing proof generation.
-- Only one recovery can be pending at a time (`require(cred.pendingRecovery.executeAfter == 0)`).
+- Only one recovery can be pending at a time (reverts with `RecoveryAlreadyPending()`).
 - Recovery is disabled when `apps[appId].recoveryTimelock == 0`.
 
 ### Attestation Freshness
@@ -58,7 +58,7 @@ Key recovery is a two-phase process with an enforced delay:
 Attestations include a verifier-signed `issuedAt` timestamp. The contract enforces:
 
 ```
-require(block.timestamp <= attestation.issuedAt + attestationValidityDuration, "BID::attestation expired")
+if (block.timestamp > attestation.issuedAt + attestationValidityDuration) revert AttestationExpired();
 ```
 
 Default validity is 30 minutes. The owner can adjust via `setAttestationValidityDuration()` (must be > 0).
@@ -151,7 +151,7 @@ Custom scorers are set by app admins via `setAppScorer()`. A malicious scorer co
 
 **Attack**: an attacker captures a valid attestation and replays it to register the same credential again.
 
-**Mitigation**: `registerCredential()` sets `cred.registered = true` and rejects subsequent calls with `"BID::already registered"`. `renewCredential()` requires the same commitment and group — it cannot be used to create a new credential. Attestation expiry (default 30 minutes) limits the replay window. Within the validity window, replaying an attestation for an already-registered credential will revert.
+**Mitigation**: `registerCredential()` sets `cred.registered = true` and rejects subsequent calls with `AlreadyRegistered()`. `renewCredential()` requires the same commitment and group — it cannot be used to create a new credential. Attestation expiry (default 30 minutes) limits the replay window. Within the validity window, replaying an attestation for an already-registered credential will revert.
 
 ### Reentrancy
 
@@ -189,13 +189,13 @@ Custom scorers are set by app admins via `setAppScorer()`. A malicious scorer co
 
 **Attack**: a user tries to hold two credentials in the same family (e.g., Farcaster Low and Farcaster High) to get two sets of nullifiers.
 
-**Mitigation**: family groups share a registration hash. The first `registerCredential()` succeeds; the second reverts with `"BID::already registered"`. Group changes within a family must go through `initiateRecovery()`, which enforces `credFamilyId > 0 && credFamilyId == attestFamilyId` and uses the recovery timelock. The timelock ensures no valid commitment exists during the transition, preventing double-spend.
+**Mitigation**: family groups share a registration hash. The first `registerCredential()` succeeds; the second reverts with `AlreadyRegistered()`. Group changes within a family must go through `initiateRecovery()`, which enforces `credFamilyId > 0 && credFamilyId == attestFamilyId` and uses the recovery timelock. The timelock ensures no valid commitment exists during the transition, preventing double-spend.
 
 ### Recovery Double-Spend
 
 **Attack**: a user initiates recovery to change their commitment, then uses the old commitment to generate proofs before the timelock expires.
 
-**Mitigation**: `initiateRecovery()` immediately removes the old commitment from the Semaphore group (via `SEMAPHORE.removeMember()`). The new commitment is not added until `executeRecovery()` after the timelock. During the timelock window, no valid commitment exists in the group. Additionally, `removeExpiredCredential()` is blocked during pending recovery (`"BID::recovery pending"`), preventing a race condition where expiry removal could interfere.
+**Mitigation**: `initiateRecovery()` immediately removes the old commitment from the Semaphore group (via `SEMAPHORE.removeMember()`). The new commitment is not added until `executeRecovery()` after the timelock. During the timelock window, no valid commitment exists in the group. Additionally, `removeExpiredCredential()` is blocked during pending recovery (`RecoveryPending()`), preventing a race condition where expiry removal could interfere.
 
 ## 4. Accepted Risks
 
@@ -212,9 +212,9 @@ Custom scorers are set by app admins via `setAppScorer()`. A malicious scorer co
 
 A valid attestation can technically be submitted multiple times within its validity window (default 30 minutes). However, this has no security impact:
 
-- `registerCredential()` rejects re-registration (`"BID::already registered"`).
+- `registerCredential()` rejects re-registration (`AlreadyRegistered()`).
 - `renewCredential()` is idempotent within the same validity period (re-extending the expiry is harmless).
-- `initiateRecovery()` rejects duplicate recovery initiation (`"BID::recovery already pending"`).
+- `initiateRecovery()` rejects duplicate recovery initiation (`RecoveryAlreadyPending()`).
 
 ### Credential Window Between Expiry and Removal
 

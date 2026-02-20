@@ -34,7 +34,7 @@ The `message` field is the correct place for recipient binding because it is ver
 The `SafeProofConsumer` abstract contract provides a ready-made pattern:
 
 ```solidity
-import {SafeProofConsumer} from "src/registry/SafeProofConsumer.sol";
+import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
 
 contract MyAirdrop is SafeProofConsumer {
     constructor(ICredentialRegistry registry_)

@@ -53,8 +53,8 @@ When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gatin
 ### Quick start
 
 ```solidity
-import {SafeProofConsumer} from "src/registry/SafeProofConsumer.sol";
-import {ICredentialRegistry} from "src/registry/ICredentialRegistry.sol";
+import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 
 contract MyAirdrop is SafeProofConsumer {
     uint256 public immutable CONTEXT;
@@ -94,7 +94,7 @@ const message = ethers.solidityPackedKeccak256(["address"], [recipient]);
 const proof = await generateProof(identity, group, message, scope);
 ```
 
-See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`src/examples/SafeAirdrop.sol`](src/examples/SafeAirdrop.sol) for a complete example.
+See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`contracts/examples/SafeAirdrop.sol`](contracts/examples/SafeAirdrop.sol) for a complete example.
 
 ## Usage
 
