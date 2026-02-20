@@ -156,7 +156,7 @@ contract BringIDGatedTest is Test {
 
         address alice = makeAddr("alice");
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
-        uint256 message = airdrop.expectedMessage(alice);
+        uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
@@ -188,7 +188,7 @@ contract BringIDGatedTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(alice)));
         uint256 actualMsg = uint256(keccak256(abi.encodePacked(bob)));
 
-        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
+        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.WrongProofRecipient.selector, expectedMsg, actualMsg));
         airdrop.claim(alice, proofs);
     }
 
@@ -220,7 +220,7 @@ contract BringIDGatedTest is Test {
         address bob = makeAddr("bob");
 
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
-        uint256 aliceMessage = airdrop.expectedMessage(alice);
+        uint256 aliceMessage = uint256(keccak256(abi.encodePacked(alice)));
 
         // Alice generates a proof bound to herself
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
@@ -230,7 +230,7 @@ contract BringIDGatedTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(bob)));
         uint256 actualMsg = proofs[0].semaphoreProof.message;
 
-        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
+        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.WrongProofRecipient.selector, expectedMsg, actualMsg));
         airdrop.claim(bob, proofs);
 
         // Alice's claim succeeds
@@ -276,15 +276,9 @@ contract BringIDGatedTest is Test {
         });
 
         vm.expectRevert(
-            abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, correctMessage, wrongMessage)
+            abi.encodeWithSelector(IBringIDGated.WrongProofRecipient.selector, correctMessage, wrongMessage)
         );
         airdrop.claim(alice, proofs);
-    }
-
-    function testExpectedMessageComputation() public {
-        address addr = makeAddr("test-addr");
-        uint256 expected = uint256(keccak256(abi.encodePacked(addr)));
-        assertEq(airdrop.expectedMessage(addr), expected);
     }
 
     function testAlreadyClaimedReverts() public {
@@ -294,7 +288,7 @@ contract BringIDGatedTest is Test {
 
         address alice = makeAddr("alice");
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
-        uint256 message = airdrop.expectedMessage(alice);
+        uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);
@@ -343,7 +337,7 @@ contract BringIDGatedTest is Test {
 
         address alice = makeAddr("alice");
         uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
-        uint256 message = airdrop.expectedMessage(alice);
+        uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
         proofs[0] = _makeProofWithMessage(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, message, commitment);

@@ -36,7 +36,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Computes the expected Semaphore `message` value for a given recipient.
     /// @param recipient_ The intended recipient address.
     /// @return The expected message: `uint256(keccak256(abi.encodePacked(recipient_)))`.
-    function expectedMessage(address recipient_) public pure returns (uint256) {
+    function expectedMessage(address recipient_) internal pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(recipient_)));
     }
 
@@ -111,7 +111,7 @@ abstract contract BringIDGated is IBringIDGated {
             }
         }
 
-        _validateRecipientBindings(proofs_, recipient_);
+        validateProofRecipients(proofs_, recipient_);
 
         bringIDScore = REGISTRY.submitProofs(context_, proofs_);
     }
@@ -119,29 +119,29 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Validates that a single proof's message is bound to the intended recipient.
     /// @param proof_ The credential group proof to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function _validateRecipientBinding(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
-        internal
+    function validateProofRecipient(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
+        public
         pure
     {
         if (recipient_ == address(0)) revert ZeroRecipient();
         uint256 expected = expectedMessage(recipient_);
         if (proof_.semaphoreProof.message != expected) {
-            revert MessageBindingMismatch(expected, proof_.semaphoreProof.message);
+            revert WrongProofRecipient(expected, proof_.semaphoreProof.message);
         }
     }
 
     /// @notice Validates that all proofs' messages are bound to the intended recipient.
     /// @param proofs_ Array of credential group proofs to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function _validateRecipientBindings(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
-        internal
+    function validateProofRecipients(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
+        public
         pure
     {
         if (recipient_ == address(0)) revert ZeroRecipient();
         uint256 expected = expectedMessage(recipient_);
         for (uint256 i = 0; i < proofs_.length; i++) {
             if (proofs_[i].semaphoreProof.message != expected) {
-                revert MessageBindingMismatch(expected, proofs_[i].semaphoreProof.message);
+                revert WrongProofRecipient(expected, proofs_[i].semaphoreProof.message);
             }
         }
     }

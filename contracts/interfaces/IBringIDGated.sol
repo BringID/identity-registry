@@ -11,7 +11,7 @@ interface IBringIDGated {
     /// @notice Thrown when a proof's message does not match the expected recipient binding.
     /// @param expected The expected message value (hash of the recipient address).
     /// @param actual The actual message value found in the proof.
-    error MessageBindingMismatch(uint256 expected, uint256 actual);
+    error WrongProofRecipient(uint256 expected, uint256 actual);
 
     /// @notice Thrown when the recipient address is the zero address.
     error ZeroRecipient();
@@ -24,13 +24,22 @@ interface IBringIDGated {
     /// @notice The BringID CredentialRegistry this contract submits proofs to.
     function REGISTRY() external view returns (ICredentialRegistry);
 
+    /// @notice Validates that a single proof's message is bound to the intended recipient.
+    /// @param proof_ The credential group proof to validate.
+    /// @param recipient_ The intended recipient address (must not be zero).
+    function validateProofRecipient(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
+        external
+        pure;
+
+    /// @notice Validates that all proofs' messages are bound to the intended recipient.
+    /// @param proofs_ Array of credential group proofs to validate.
+    /// @param recipient_ The intended recipient address (must not be zero).
+    function validateProofRecipients(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
+        external
+        pure;
+
     /// @notice The app ID that all proofs must target.
     function APP_ID() external view returns (uint256);
-
-    /// @notice Computes the expected Semaphore `message` value for a given recipient.
-    /// @param recipient_ The intended recipient address.
-    /// @return The expected message: `uint256(keccak256(abi.encodePacked(recipient_)))`.
-    function expectedMessage(address recipient_) external pure returns (uint256);
 
     /// @notice View-only: verifies a single proof using this contract's address for scope.
     /// @param context_ Application-defined context value for scope computation.
