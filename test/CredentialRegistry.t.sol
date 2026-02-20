@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
 import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
-import {ICredentialRegistry} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
+import {ICredentialRegistry, CredentialGroupProof} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
 import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
@@ -40,13 +40,13 @@ contract MockScorer is IScorer {
 
 contract ReentrantAttacker {
     CredentialRegistry public registry;
-    ICredentialRegistry.CredentialGroupProof public storedProof;
+    CredentialGroupProof public storedProof;
 
     constructor(CredentialRegistry registry_) {
         registry = registry_;
     }
 
-    function setProof(ICredentialRegistry.CredentialGroupProof memory proof_) external {
+    function setProof(CredentialGroupProof memory proof_) external {
         storedProof = proof_;
     }
 
@@ -55,7 +55,7 @@ contract ReentrantAttacker {
     }
 
     function attackDuringSubmitProofs() external {
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
         proofs[0] = storedProof;
         registry.submitProofs(0, proofs);
     }
@@ -193,12 +193,12 @@ contract CredentialRegistryTest is Test {
         uint256 commitmentKey,
         uint256 scope,
         uint256 commitment
-    ) internal returns (ICredentialRegistry.CredentialGroupProof memory) {
+    ) internal returns (CredentialGroupProof memory) {
         uint256[] memory comms = new uint256[](1);
         comms[0] = commitment;
         (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
             TestUtils.semaphoreProof(commitmentKey, scope, comms);
-        return ICredentialRegistry.CredentialGroupProof({
+        return CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -812,7 +812,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof =
+        CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
         vm.expectEmit(true, true, false, true);
@@ -825,7 +825,7 @@ contract CredentialRegistryTest is Test {
     function testValidateProofInactiveVerification() public {
         uint256 credentialGroupId = 1;
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -848,7 +848,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 inactiveAppId = 999;
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: inactiveAppId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -876,7 +876,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof =
+        CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
 
         vm.expectRevert(ScopeMismatch.selector);
@@ -893,7 +893,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -934,7 +934,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
@@ -971,7 +971,7 @@ contract CredentialRegistryTest is Test {
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
@@ -993,9 +993,9 @@ contract CredentialRegistryTest is Test {
 
         uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: credentialGroupId2,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2371,7 +2371,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof =
+        CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
         vm.prank(prover);
@@ -2386,7 +2386,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2413,7 +2413,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: inactiveAppId,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2443,7 +2443,7 @@ contract CredentialRegistryTest is Test {
         // Generate proof with wrong scope (different address)
         uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof =
+        CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
 
         vm.prank(prover);
@@ -2459,7 +2459,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof memory proof = CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2494,7 +2494,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
@@ -2517,9 +2517,9 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: credentialGroupId2,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2559,7 +2559,7 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
@@ -2583,9 +2583,9 @@ contract CredentialRegistryTest is Test {
         address prover = makeAddr("prover");
         uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: credentialGroupId2,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -2617,7 +2617,7 @@ contract CredentialRegistryTest is Test {
         ReentrantAttacker attacker = new ReentrantAttacker(registry);
         uint256 scope = uint256(keccak256(abi.encode(address(attacker), uint256(0))));
 
-        ICredentialRegistry.CredentialGroupProof memory proof =
+        CredentialGroupProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
         attacker.setProof(proof);
@@ -2943,7 +2943,7 @@ contract CredentialRegistryTest is Test {
 
         registry.pause();
 
-        ICredentialRegistry.CredentialGroupProof memory proof;
+        CredentialGroupProof memory proof;
         proof.credentialGroupId = credentialGroupId;
         proof.appId = DEFAULT_APP_ID;
 
@@ -2957,7 +2957,7 @@ contract CredentialRegistryTest is Test {
 
         registry.pause();
 
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](1);
         proofs[0].credentialGroupId = credentialGroupId;
         proofs[0].appId = DEFAULT_APP_ID;
 
@@ -3017,8 +3017,8 @@ contract CredentialRegistryTest is Test {
     // --- Duplicate credential group tests ---
 
     function testSubmitProofsRevertsDuplicateCredentialGroupId() public {
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        proofs[0] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -3030,7 +3030,7 @@ contract CredentialRegistryTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -3048,8 +3048,8 @@ contract CredentialRegistryTest is Test {
     }
 
     function testGetScoreRevertsDuplicateCredentialGroupId() public {
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        proofs[0] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -3061,7 +3061,7 @@ contract CredentialRegistryTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -3081,8 +3081,8 @@ contract CredentialRegistryTest is Test {
     // --- verifyProofs duplicate check ---
 
     function testVerifyProofsRevertsDuplicateCredentialGroupId() public {
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+        CredentialGroupProof[] memory proofs = new CredentialGroupProof[](2);
+        proofs[0] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({
@@ -3094,7 +3094,7 @@ contract CredentialRegistryTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+        proofs[1] = CredentialGroupProof({
             credentialGroupId: 1,
             appId: DEFAULT_APP_ID,
             semaphoreProof: ISemaphore.SemaphoreProof({

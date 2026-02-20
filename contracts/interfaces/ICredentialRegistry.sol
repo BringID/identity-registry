@@ -3,6 +3,19 @@ pragma solidity 0.8.23;
 
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 
+/// @notice A proof binding a Semaphore ZK proof to a specific credential group and app.
+/// @param credentialGroupId The credential group being proven.
+/// @param appId The app identity used (determines which per-app Semaphore group).
+/// @param semaphoreProof The Semaphore zero-knowledge proof (membership + nullifier).
+///        The `semaphoreProof.message` field is not validated by the registry — it is a
+///        free-form field that smart contract consumers SHOULD bind to the intended
+///        recipient or action to prevent mempool front-running. See `BringIDGated`.
+struct CredentialGroupProof {
+    uint256 credentialGroupId;
+    uint256 appId;
+    ISemaphore.SemaphoreProof semaphoreProof;
+}
+
 /// @title ICredentialRegistry
 /// @notice Interface for the BringID Credential Registry — a privacy-preserving credential
 ///         system where users register credentials via verifier-signed attestations and prove
@@ -73,19 +86,6 @@ interface ICredentialRegistry {
         uint256 expiresAt;
         uint256 credentialGroupId;
         RecoveryRequest pendingRecovery;
-    }
-
-    /// @notice A proof binding a Semaphore ZK proof to a specific credential group and app.
-    /// @param credentialGroupId The credential group being proven.
-    /// @param appId The app identity used (determines which per-app Semaphore group).
-    /// @param semaphoreProof The Semaphore zero-knowledge proof (membership + nullifier).
-    ///        The `semaphoreProof.message` field is not validated by the registry — it is a
-    ///        free-form field that smart contract consumers SHOULD bind to the intended
-    ///        recipient or action to prevent mempool front-running. See `BringIDGated`.
-    struct CredentialGroupProof {
-        uint256 credentialGroupId;
-        uint256 appId;
-        ISemaphore.SemaphoreProof semaphoreProof;
     }
 
     /// @notice A verifier-signed attestation authorizing a credential operation.

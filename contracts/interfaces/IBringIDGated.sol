@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry} from "./ICredentialRegistry.sol";
+import {ICredentialRegistry, CredentialGroupProof} from "./ICredentialRegistry.sol";
 
 /// @title IBringIDGated
 /// @notice Interface for contracts that validate and submit BringID credential proofs.
@@ -27,16 +27,12 @@ interface IBringIDGated {
     /// @notice Validates that a single proof's message is bound to the intended recipient.
     /// @param proof_ The credential group proof to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function validateProofRecipient(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
-        external
-        pure;
+    function validateProofRecipient(CredentialGroupProof calldata proof_, address recipient_) external pure;
 
     /// @notice Validates that all proofs' messages are bound to the intended recipient.
     /// @param proofs_ Array of credential group proofs to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function validateProofRecipients(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
-        external
-        pure;
+    function validateProofRecipients(CredentialGroupProof[] calldata proofs_, address recipient_) external pure;
 
     /// @notice The app ID that all proofs must target.
     function APP_ID() external view returns (uint256);
@@ -45,26 +41,17 @@ interface IBringIDGated {
     /// @param context_ Application-defined context value for scope computation.
     /// @param proof_ The credential group proof to verify.
     /// @return True if the proof is valid.
-    function verifyProof(uint256 context_, ICredentialRegistry.CredentialGroupProof calldata proof_)
-        external
-        view
-        returns (bool);
+    function verifyProof(uint256 context_, CredentialGroupProof calldata proof_) external view returns (bool);
 
     /// @notice View-only: verifies multiple proofs using this contract's address for scope.
     /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
-    function verifyProofs(uint256 context_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
-        external
-        view
-        returns (bool);
+    function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) external view returns (bool);
 
     /// @notice View-only: verifies proofs and returns aggregate score using this contract's address.
     /// @param context_ Application-defined context value for scope computation.
     /// @param proofs_ Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
-    function getScore(uint256 context_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
-        external
-        view
-        returns (uint256);
+    function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) external view returns (uint256);
 }

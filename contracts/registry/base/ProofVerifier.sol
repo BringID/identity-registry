@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import "@bringid/contracts/interfaces/Errors.sol";
 import "@bringid/contracts/interfaces/Events.sol";
+import {CredentialGroupProof} from "@bringid/contracts/interfaces/ICredentialRegistry.sol";
 import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
