@@ -6,7 +6,7 @@ import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
 import {DefaultScorer} from "../src/scoring/DefaultScorer.sol";
 import {SafeAirdrop} from "../src/examples/SafeAirdrop.sol";
-import {SafeProofConsumer} from "../src/registry/SafeProofConsumer.sol";
+import {SafeProofConsumer} from "../src/examples/SafeProofConsumer.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
@@ -51,8 +51,8 @@ contract SafeProofConsumerTest is Test {
         // Register app (caller = owner = admin)
         appId = registry.registerApp(0);
 
-        // Deploy SafeAirdrop
-        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT);
+        // Deploy SafeAirdrop pinned to appId
+        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId, 15);
     }
 
     // --- Helper functions ---
@@ -213,6 +213,9 @@ contract SafeProofConsumerTest is Test {
     }
 
     function testMultipleProofsOneMismatchReverts() public {
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
         address alice = makeAddr("alice");
         uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
         uint256 wrongMessage = uint256(keccak256(abi.encodePacked(makeAddr("wrong"))));
@@ -231,9 +234,9 @@ contract SafeProofConsumerTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        // Second proof has wrong message
+        // Second proof has wrong message and different credential group
         proofs[1] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: CREDENTIAL_GROUP_ID,
+            credentialGroupId: credentialGroupId2,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
@@ -275,6 +278,56 @@ contract SafeProofConsumerTest is Test {
 
         // Second claim reverts
         vm.expectRevert(SafeAirdrop.AlreadyClaimed.selector);
+        airdrop.claim(alice, proofs);
+    }
+
+    function testClaimRevertsOnWrongAppId() public {
+        // Register a second app
+        uint256 attackerAppId = registry.registerApp(0);
+
+        address alice = makeAddr("alice");
+        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](1);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: CREDENTIAL_GROUP_ID,
+            appId: attackerAppId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: correctMessage,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(abi.encodeWithSelector(SafeAirdrop.AppIdMismatch.selector, appId, attackerAppId));
+        airdrop.claim(alice, proofs);
+    }
+
+    function testClaimRevertsTooManyProofs() public {
+        address alice = makeAddr("alice");
+        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
+
+        // Create 16 proofs (exceeds MAX_PROOFS = 15)
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](16);
+        for (uint256 i = 0; i < 16; i++) {
+            proofs[i] = ICredentialRegistry.CredentialGroupProof({
+                credentialGroupId: i + 1,
+                appId: appId,
+                semaphoreProof: ISemaphore.SemaphoreProof({
+                    merkleTreeDepth: 0,
+                    merkleTreeRoot: 0,
+                    nullifier: 0,
+                    message: correctMessage,
+                    scope: 0,
+                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+                })
+            });
+        }
+
+        vm.expectRevert(SafeAirdrop.TooManyProofs.selector);
         airdrop.claim(alice, proofs);
     }
 

@@ -65,6 +65,7 @@ abstract contract ProofVerifier is RegistryStorage {
         whenNotPaused
         returns (uint256 _score)
     {
+        _checkNoDuplicateGroups(proofs_);
         _score = 0;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _score += _submitProof(context_, proofs_[i]);
@@ -101,13 +102,23 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param proof_ The credential group proof to verify.
     /// @return True if the proof is valid.
     function verifyProof(uint256 context_, CredentialGroupProof memory proof_) public view returns (bool) {
-        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) return false;
-        if (apps[proof_.appId].status != AppStatus.ACTIVE) return false;
-        if (proof_.semaphoreProof.scope != uint256(keccak256(abi.encode(msg.sender, context_)))) return false;
-        if (!appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId]) return false;
+        return _verifyProof(msg.sender, context_, proof_);
+    }
 
-        uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
-        return SEMAPHORE.verifyProof(semaphoreGroupId, proof_.semaphoreProof);
+    /// @notice Verifies a credential group proof for a specific sender without consuming the nullifier.
+    /// @dev Same as verifyProof() but computes scope as keccak256(sender_, context_) instead of
+    ///      using msg.sender. Useful for off-chain callers pre-checking proofs destined for a
+    ///      contract consumer, where msg.sender would differ between the view call and actual submit.
+    /// @param sender_ The address to use for scope computation (typically the contract that will call submitProof).
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proof_ The credential group proof to verify.
+    /// @return True if the proof is valid.
+    function verifyProofFor(address sender_, uint256 context_, CredentialGroupProof memory proof_)
+        public
+        view
+        returns (bool)
+    {
+        return _verifyProof(sender_, context_, proof_);
     }
 
     /// @notice Verifies multiple credential group proofs without consuming nullifiers.
@@ -116,8 +127,27 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
     function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (bool) {
+        _checkNoDuplicateGroups(proofs_);
         for (uint256 i = 0; i < proofs_.length; i++) {
-            if (!verifyProof(context_, proofs_[i])) return false;
+            if (!_verifyProof(msg.sender, context_, proofs_[i])) return false;
+        }
+        return true;
+    }
+
+    /// @notice Verifies multiple credential group proofs for a specific sender without consuming nullifiers.
+    /// @dev Same as verifyProofs() but computes scope using sender_ instead of msg.sender.
+    /// @param sender_ The address to use for scope computation.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to verify.
+    /// @return True if all proofs are valid.
+    function verifyProofsFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs_)
+        public
+        view
+        returns (bool)
+    {
+        _checkNoDuplicateGroups(proofs_);
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            if (!_verifyProof(sender_, context_, proofs_[i])) return false;
         }
         return true;
     }
@@ -128,12 +158,61 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return _score The total score across all verified credential groups.
     function getScore(uint256 context_, CredentialGroupProof[] calldata proofs_) public view returns (uint256 _score) {
+        _checkNoDuplicateGroups(proofs_);
         _score = 0;
         CredentialGroupProof memory _proof;
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
-            if (!verifyProof(context_, _proof)) revert InvalidProof();
+            if (!_verifyProof(msg.sender, context_, _proof)) revert InvalidProof();
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
+        }
+    }
+
+    /// @notice Verifies multiple proofs for a specific sender and returns the aggregate score.
+    /// @dev Same as getScore() but computes scope using sender_ instead of msg.sender.
+    /// @param sender_ The address to use for scope computation.
+    /// @param context_ Application-defined context value (see submitProof).
+    /// @param proofs_ Array of credential group proofs to verify and score.
+    /// @return _score The total score across all verified credential groups.
+    function getScoreFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs_)
+        public
+        view
+        returns (uint256 _score)
+    {
+        _checkNoDuplicateGroups(proofs_);
+        _score = 0;
+        CredentialGroupProof memory _proof;
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            _proof = proofs_[i];
+            if (!_verifyProof(sender_, context_, _proof)) revert InvalidProof();
+            _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
+        }
+    }
+
+    /// @dev Internal implementation of verifyProof. Validates the proof against the given sender
+    ///      address for scope computation.
+    function _verifyProof(address sender_, uint256 context_, CredentialGroupProof memory proof_)
+        internal
+        view
+        returns (bool)
+    {
+        if (credentialGroups[proof_.credentialGroupId].status != CredentialGroupStatus.ACTIVE) return false;
+        if (apps[proof_.appId].status != AppStatus.ACTIVE) return false;
+        if (proof_.semaphoreProof.scope != uint256(keccak256(abi.encode(sender_, context_)))) return false;
+        if (!appSemaphoreGroupCreated[proof_.credentialGroupId][proof_.appId]) return false;
+
+        uint256 semaphoreGroupId = appSemaphoreGroups[proof_.credentialGroupId][proof_.appId];
+        return SEMAPHORE.verifyProof(semaphoreGroupId, proof_.semaphoreProof);
+    }
+
+    /// @dev Reverts if any two proofs share the same credentialGroupId, preventing score inflation.
+    function _checkNoDuplicateGroups(CredentialGroupProof[] calldata proofs_) internal pure {
+        for (uint256 i = 1; i < proofs_.length; i++) {
+            for (uint256 j = 0; j < i; j++) {
+                if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
+                    revert DuplicateCredentialGroup();
+                }
+            }
         }
     }
 }

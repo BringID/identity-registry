@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import {ICredentialRegistry} from "../registry/ICredentialRegistry.sol";
-import {SafeProofConsumer} from "../registry/SafeProofConsumer.sol";
+import {SafeProofConsumer} from "./SafeProofConsumer.sol";
 
 /// @title SafeAirdrop
 /// @notice Example airdrop contract demonstrating front-running-resistant proof consumption.
@@ -17,6 +17,12 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @notice Application-defined context value passed to the registry.
     uint256 public immutable CONTEXT;
 
+    /// @notice The app ID that all proofs must target.
+    uint256 public immutable APP_ID;
+
+    /// @notice Maximum number of proofs accepted per claim.
+    uint256 public immutable MAX_PROOFS;
+
     /// @notice Tracks which addresses have already claimed.
     mapping(address => bool) public claimed;
 
@@ -28,6 +34,14 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param minScore The required minimum score.
     error InsufficientScore(uint256 score, uint256 minScore);
 
+    /// @notice Thrown when the number of proofs exceeds `MAX_PROOFS`.
+    error TooManyProofs();
+
+    /// @notice Thrown when a proof targets an unexpected app ID.
+    /// @param expected The expected app ID.
+    /// @param actual The actual app ID found in the proof.
+    error AppIdMismatch(uint256 expected, uint256 actual);
+
     /// @notice Emitted when an airdrop claim succeeds.
     /// @param recipient The address that received the claim.
     /// @param score The aggregate credential score.
@@ -36,9 +50,15 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param minScore_ Minimum aggregate score to claim.
     /// @param context_ Application-defined context value for scope computation.
-    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_) SafeProofConsumer(registry_) {
+    /// @param appId_ The app ID that all proofs must target.
+    /// @param maxProofs_ Maximum number of proofs accepted per claim.
+    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_, uint256 appId_, uint256 maxProofs_)
+        SafeProofConsumer(registry_)
+    {
         MIN_SCORE = minScore_;
         CONTEXT = context_;
+        APP_ID = appId_;
+        MAX_PROOFS = maxProofs_;
     }
 
     /// @notice Claims an airdrop by submitting message-bound credential proofs.
@@ -50,7 +70,13 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
     function claim(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_) external {
+        if (proofs_.length > MAX_PROOFS) revert TooManyProofs();
+
         if (claimed[recipient_]) revert AlreadyClaimed();
+
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            if (proofs_[i].appId != APP_ID) revert AppIdMismatch(APP_ID, proofs_[i].appId);
+        }
 
         _validateMessageBindings(proofs_, recipient_);
 

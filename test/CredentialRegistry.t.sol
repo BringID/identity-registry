@@ -3007,4 +3007,192 @@ contract CredentialRegistryTest is Test {
         registry.addTrustedVerifier(address(0x1234));
         assertTrue(registry.trustedVerifiers(address(0x1234)));
     }
+
+    // --- Duplicate credential group tests ---
+
+    function testSubmitProofsRevertsDuplicateCredentialGroupId() public {
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.submitProofs(0, proofs);
+    }
+
+    function testGetScoreRevertsDuplicateCredentialGroupId() public {
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.getScore(0, proofs);
+    }
+
+    // --- verifyProofs duplicate check ---
+
+    function testVerifyProofsRevertsDuplicateCredentialGroupId() public {
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.verifyProofs(0, proofs);
+    }
+
+    // --- verifyProofFor / verifyProofsFor / getScoreFor ---
+
+    function testVerifyProofForWithContractSender() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        uint256 commitmentKey = 12345;
+        uint256 commitment = TestUtils.semaphoreCommitment(commitmentKey);
+        _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
+
+        // The contract that will eventually call submitProof
+        address contractSender = makeAddr("consumer-contract");
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(contractSender, context)));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
+
+        // Off-chain caller (different address) can verify using verifyProofFor
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        bool result = registry.verifyProofFor(contractSender, context, proof);
+        assertTrue(result);
+
+        // Regular verifyProof from the off-chain caller would fail (scope mismatch)
+        vm.prank(offChainCaller);
+        bool resultMismatch = registry.verifyProof(context, proof);
+        assertFalse(resultMismatch);
+    }
+
+    function testVerifyProofsForWithContractSender() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        address contractSender = makeAddr("consumer-contract");
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(contractSender, context)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        bool result = registry.verifyProofsFor(contractSender, context, proofs);
+        assertTrue(result);
+    }
+
+    function testGetScoreForWithContractSender() public {
+        uint256 credentialGroupId1 = 1;
+        uint256 credentialGroupId2 = 2;
+        uint256 score1 = 100;
+        uint256 score2 = 200;
+
+        registry.createCredentialGroup(credentialGroupId1, 0, 0);
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+        scorer.setScore(credentialGroupId1, score1);
+        scorer.setScore(credentialGroupId2, score2);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = TestUtils.semaphoreCommitment(commitmentKey1);
+        uint256 commitment2 = TestUtils.semaphoreCommitment(commitmentKey2);
+
+        _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
+
+        address contractSender = makeAddr("consumer-contract");
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(contractSender, context)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
+
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        uint256 totalScore = registry.getScoreFor(contractSender, context, proofs);
+        assertEq(totalScore, score1 + score2);
+    }
 }
