@@ -105,22 +105,6 @@ abstract contract ProofVerifier is RegistryStorage {
         return _verifyProof(msg.sender, context_, proof_);
     }
 
-    /// @notice Verifies a credential group proof for a specific sender without consuming the nullifier.
-    /// @dev Same as verifyProof() but computes scope as keccak256(sender_, context_) instead of
-    ///      using msg.sender. Useful for off-chain callers pre-checking proofs destined for a
-    ///      contract consumer, where msg.sender would differ between the view call and actual submit.
-    /// @param sender_ The address to use for scope computation (typically the contract that will call submitProof).
-    /// @param context_ Application-defined context value (see submitProof).
-    /// @param proof_ The credential group proof to verify.
-    /// @return True if the proof is valid.
-    function verifyProofFor(address sender_, uint256 context_, CredentialGroupProof memory proof_)
-        public
-        view
-        returns (bool)
-    {
-        return _verifyProof(sender_, context_, proof_);
-    }
-
     /// @notice Verifies multiple credential group proofs without consuming nullifiers.
     /// @dev View-only counterpart to submitProofs(). Returns false if any proof is invalid.
     /// @param context_ Application-defined context value (see submitProof).
@@ -130,24 +114,6 @@ abstract contract ProofVerifier is RegistryStorage {
         _checkNoDuplicateGroups(proofs_);
         for (uint256 i = 0; i < proofs_.length; i++) {
             if (!_verifyProof(msg.sender, context_, proofs_[i])) return false;
-        }
-        return true;
-    }
-
-    /// @notice Verifies multiple credential group proofs for a specific sender without consuming nullifiers.
-    /// @dev Same as verifyProofs() but computes scope using sender_ instead of msg.sender.
-    /// @param sender_ The address to use for scope computation.
-    /// @param context_ Application-defined context value (see submitProof).
-    /// @param proofs_ Array of credential group proofs to verify.
-    /// @return True if all proofs are valid.
-    function verifyProofsFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs_)
-        public
-        view
-        returns (bool)
-    {
-        _checkNoDuplicateGroups(proofs_);
-        for (uint256 i = 0; i < proofs_.length; i++) {
-            if (!_verifyProof(sender_, context_, proofs_[i])) return false;
         }
         return true;
     }
@@ -164,27 +130,6 @@ abstract contract ProofVerifier is RegistryStorage {
         for (uint256 i = 0; i < proofs_.length; i++) {
             _proof = proofs_[i];
             if (!_verifyProof(msg.sender, context_, _proof)) revert InvalidProof();
-            _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
-        }
-    }
-
-    /// @notice Verifies multiple proofs for a specific sender and returns the aggregate score.
-    /// @dev Same as getScore() but computes scope using sender_ instead of msg.sender.
-    /// @param sender_ The address to use for scope computation.
-    /// @param context_ Application-defined context value (see submitProof).
-    /// @param proofs_ Array of credential group proofs to verify and score.
-    /// @return _score The total score across all verified credential groups.
-    function getScoreFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs_)
-        public
-        view
-        returns (uint256 _score)
-    {
-        _checkNoDuplicateGroups(proofs_);
-        _score = 0;
-        CredentialGroupProof memory _proof;
-        for (uint256 i = 0; i < proofs_.length; i++) {
-            _proof = proofs_[i];
-            if (!_verifyProof(sender_, context_, _proof)) revert InvalidProof();
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
         }
     }

@@ -20,6 +20,8 @@ contract BringIDGatedTest is Test {
     // Pre-computed Semaphore commitment for deterministic test key (avoids FFI per-test).
     // Generated via: Identity.import(ethers.zeroPadValue(ethers.toBeHex(12345), 32)).commitment
     uint256 constant COMMITMENT_12345 = 3757495654825671944221025502932027603093002514688471603980596532070551940856;
+    // Generated via: Identity.import(ethers.zeroPadValue(ethers.toBeHex(67890), 32)).commitment
+    uint256 constant COMMITMENT_67890 = 1627838166670782884016414820331096838803092519983728431519200514911855753278;
 
     CredentialRegistry registry;
     DefaultScorer scorer;
@@ -105,6 +107,31 @@ contract BringIDGatedTest is Test {
         comms[0] = commitment;
         (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
             TestUtils.semaphoreProofWithMessage(commitmentKey, scope, message, comms);
+        return ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: credentialGroupId,
+            appId: appId_,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: depth,
+                merkleTreeRoot: root,
+                nullifier: nullifier,
+                message: msg_,
+                scope: scope,
+                points: pts
+            })
+        });
+    }
+
+    function _makeProof(
+        uint256 credentialGroupId,
+        uint256 appId_,
+        uint256 commitmentKey,
+        uint256 scope,
+        uint256 commitment
+    ) internal returns (ICredentialRegistry.CredentialGroupProof memory) {
+        uint256[] memory comms = new uint256[](1);
+        comms[0] = commitment;
+        (uint256 depth, uint256 root, uint256 nullifier, uint256 msg_, uint256[8] memory pts) =
+            TestUtils.semaphoreProof(commitmentKey, scope, comms);
         return ICredentialRegistry.CredentialGroupProof({
             credentialGroupId: credentialGroupId,
             appId: appId_,
@@ -322,5 +349,81 @@ contract BringIDGatedTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(SimpleAirdrop.InsufficientScore.selector, MIN_SCORE - 1, MIN_SCORE));
         airdrop.claim(alice, proofs);
+    }
+
+    // --- View function tests (verifyProof / verifyProofs / getScore via BringIDGated) ---
+
+    function testVerifyProofViaBringIDGated() public {
+        uint256 commitmentKey = 12345;
+        uint256 commitment = COMMITMENT_12345;
+        _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
+
+        // Scope is bound to airdrop contract address (msg.sender inside registry call)
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+
+        ICredentialRegistry.CredentialGroupProof memory proof =
+            _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, commitment);
+
+        // Off-chain caller can verify through the BringIDGated consumer
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        bool result = airdrop.verifyProof(context, proof);
+        assertTrue(result);
+    }
+
+    function testVerifyProofsViaBringIDGated() public {
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
+
+        _registerCredential(CREDENTIAL_GROUP_ID, keccak256("id-1"), appId, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), appId, commitment2);
+
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, appId, commitmentKey2, scope, commitment2);
+
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        bool result = airdrop.verifyProofs(context, proofs);
+        assertTrue(result);
+    }
+
+    function testGetScoreViaBringIDGated() public {
+        uint256 credentialGroupId2 = 2;
+        uint256 score1 = 100;
+        uint256 score2 = 200;
+
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+        scorer.setScore(CREDENTIAL_GROUP_ID, score1);
+        scorer.setScore(credentialGroupId2, score2);
+
+        uint256 commitmentKey1 = 12345;
+        uint256 commitmentKey2 = 67890;
+        uint256 commitment1 = COMMITMENT_12345;
+        uint256 commitment2 = COMMITMENT_67890;
+
+        _registerCredential(CREDENTIAL_GROUP_ID, keccak256("id-1"), appId, commitment1);
+        _registerCredential(credentialGroupId2, keccak256("id-2"), appId, commitment2);
+
+        uint256 context = 42;
+        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);
+        proofs[1] = _makeProof(credentialGroupId2, appId, commitmentKey2, scope, commitment2);
+
+        address offChainCaller = makeAddr("off-chain-caller");
+        vm.prank(offChainCaller);
+        uint256 totalScore = airdrop.getScore(context, proofs);
+        assertEq(totalScore, score1 + score2);
     }
 }

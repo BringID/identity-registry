@@ -52,6 +52,45 @@ abstract contract BringIDGated {
         return uint256(keccak256(abi.encodePacked(recipient_)));
     }
 
+    /// @notice View-only: verifies a single proof using this contract's address for scope.
+    /// @dev Delegates to `REGISTRY.verifyProof()` where `msg.sender` is `address(this)`.
+    /// @param context_ Application-defined context value for scope computation.
+    /// @param proof_ The credential group proof to verify.
+    /// @return True if the proof is valid.
+    function verifyProof(uint256 context_, ICredentialRegistry.CredentialGroupProof calldata proof_)
+        public
+        view
+        returns (bool)
+    {
+        return REGISTRY.verifyProof(context_, proof_);
+    }
+
+    /// @notice View-only: verifies multiple proofs using this contract's address for scope.
+    /// @dev Delegates to `REGISTRY.verifyProofs()` where `msg.sender` is `address(this)`.
+    /// @param context_ Application-defined context value for scope computation.
+    /// @param proofs_ Array of credential group proofs to verify.
+    /// @return True if all proofs are valid.
+    function verifyProofs(uint256 context_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
+        public
+        view
+        returns (bool)
+    {
+        return REGISTRY.verifyProofs(context_, proofs_);
+    }
+
+    /// @notice View-only: verifies proofs and returns aggregate score using this contract's address.
+    /// @dev Delegates to `REGISTRY.getScore()` where `msg.sender` is `address(this)`.
+    /// @param context_ Application-defined context value for scope computation.
+    /// @param proofs_ Array of credential group proofs to verify and score.
+    /// @return The total score across all verified credential groups.
+    function getScore(uint256 context_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_)
+        public
+        view
+        returns (uint256)
+    {
+        return REGISTRY.getScore(context_, proofs_);
+    }
+
     /// @notice Validates proofs and submits them to the registry using context = 0.
     /// @dev Calls the 3-parameter version with context_ = 0. For a non-zero fixed context,
     ///      store your own immutable and call the 3-param overload directly.
