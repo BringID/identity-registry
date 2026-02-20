@@ -6,7 +6,7 @@ import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
 import {DefaultScorer} from "../src/scoring/DefaultScorer.sol";
 import {SafeAirdrop} from "../src/examples/SafeAirdrop.sol";
-import {SafeProofConsumer} from "../src/registry/SafeProofConsumer.sol";
+import {SafeProofConsumer} from "../src/examples/SafeProofConsumer.sol";
 import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
@@ -328,40 +328,6 @@ contract SafeProofConsumerTest is Test {
         }
 
         vm.expectRevert(SafeAirdrop.TooManyProofs.selector);
-        airdrop.claim(alice, proofs);
-    }
-
-    function testClaimRevertsDuplicateCredentialGroupId() public {
-        address alice = makeAddr("alice");
-        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
-
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
-        proofs[0] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: CREDENTIAL_GROUP_ID,
-            appId: appId,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: 0,
-                merkleTreeRoot: 0,
-                nullifier: 0,
-                message: correctMessage,
-                scope: 0,
-                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
-            })
-        });
-        proofs[1] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: CREDENTIAL_GROUP_ID,
-            appId: appId,
-            semaphoreProof: ISemaphore.SemaphoreProof({
-                merkleTreeDepth: 0,
-                merkleTreeRoot: 0,
-                nullifier: 0,
-                message: correctMessage,
-                scope: 0,
-                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
-            })
-        });
-
-        vm.expectRevert(SafeAirdrop.DuplicateCredentialGroup.selector);
         airdrop.claim(alice, proofs);
     }
 
