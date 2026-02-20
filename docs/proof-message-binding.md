@@ -31,42 +31,33 @@ The `message` field is the correct place for recipient binding because it is ver
 
 ## The Solution: Message Binding
 
-The `@bringid/contracts` package provides three abstraction levels. All handle message binding; the higher-level contracts also enforce app ID matching and proof count limits.
+The `@bringid/contracts` package provides three abstraction levels. All handle message binding; the higher-level contracts also enforce app ID matching.
 
-### Recommended: `BringIDGatedWithContext`
+### Recommended: `BringIDGated`
 
-Handles message binding, app ID validation, proof count limits, and proof submission in a single `_submitAndValidate` call. Your contract only needs to check the returned score.
+Handles message binding, app ID validation, and proof submission in a single `_submitAndValidate` call. Your contract only needs to check the returned score.
 
 ```solidity
-import {BringIDGatedWithContext} from "@bringid/contracts/BringIDGatedWithContext.sol";
+import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
 import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 
-contract MyAirdrop is BringIDGatedWithContext {
-    uint256 public immutable MIN_SCORE;
-    error InsufficientScore(uint256 score, uint256 minScore);
+contract MyGate is BringIDGated {
+    constructor(ICredentialRegistry registry_, uint256 appId_)
+        BringIDGated(registry_, appId_)
+    {}
 
-    constructor(
-        ICredentialRegistry registry_,
-        uint256 minScore_,
-        uint256 context_,
-        uint256 appId_,
-        uint256 maxProofs_
-    ) BringIDGatedWithContext(registry_, context_, appId_, maxProofs_) {
-        MIN_SCORE = minScore_;
-    }
-
-    function claim(
+    function doAction(
         address recipient_,
+        uint256 context_,
         ICredentialRegistry.CredentialGroupProof[] calldata proofs_
     ) external {
-        uint256 score = _submitAndValidate(recipient_, proofs_);
-        if (score < MIN_SCORE) revert InsufficientScore(score, MIN_SCORE);
-        // ... distribute tokens to recipient_ ...
+        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
+        // ... use score ...
     }
 }
 ```
 
-For dynamic context values, inherit `BringIDGated` directly and pass context as a parameter to the 3-argument `_submitAndValidate(recipient, context, proofs)`.
+For a fixed context value, inherit `BringIDGatedWithContext` which stores a `CONTEXT` immutable and provides a 2-parameter `_submitAndValidate(recipient, proofs)` overload.
 
 ### Low-level: `SafeProofConsumer`
 
@@ -102,7 +93,7 @@ The helper computes `expectedMessage(recipient) = uint256(keccak256(abi.encodePa
 ```
 SafeProofConsumer (REGISTRY)          ← message binding only
     │
-BringIDGated (APP_ID, MAX_PROOFS)    ← + app ID validation, proof count, _submitAndValidate(recipient, context, proofs)
+BringIDGated (APP_ID)                ← + app ID validation, _submitAndValidate(recipient, context, proofs)
     │
 BringIDGatedWithContext (CONTEXT)     ← + fixed context, _submitAndValidate(recipient, proofs)
 ```
@@ -119,7 +110,7 @@ BringIDGatedWithContext (CONTEXT)     ← + fixed context, _submitAndValidate(re
 
 | Function | Visibility | Description |
 |----------|-----------|-------------|
-| `_submitAndValidate(recipient, context, proofs)` | `internal` | Validates proof count, app IDs, message binding, submits proofs. Returns aggregate score. |
+| `_submitAndValidate(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs. Returns aggregate score. |
 
 ### BringIDGatedWithContext API
 
@@ -172,4 +163,4 @@ The key principle is the same: the proof's `message` field must commit to all ac
 
 Both layers are needed for safe on-chain proof consumption. The registry enforces scope binding; your contract must enforce message binding.
 
-For most integrations, inherit `BringIDGatedWithContext` (or `BringIDGated` for dynamic context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.
+For most integrations, inherit `BringIDGated` (or `BringIDGatedWithContext` for a fixed context) — these handle both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.

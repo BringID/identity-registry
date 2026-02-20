@@ -16,10 +16,7 @@ abstract contract BringIDGatedWithContext is BringIDGated {
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param context_ Application-defined context value for scope computation.
     /// @param appId_ The app ID that all proofs must target.
-    /// @param maxProofs_ Maximum number of proofs accepted per call.
-    constructor(ICredentialRegistry registry_, uint256 context_, uint256 appId_, uint256 maxProofs_)
-        BringIDGated(registry_, appId_, maxProofs_)
-    {
+    constructor(ICredentialRegistry registry_, uint256 context_, uint256 appId_) BringIDGated(registry_, appId_) {
         CONTEXT = context_;
     }
 

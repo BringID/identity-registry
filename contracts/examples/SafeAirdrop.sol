@@ -34,9 +34,8 @@ contract SafeAirdrop is BringIDGatedWithContext {
     /// @param minScore_ Minimum aggregate score to claim.
     /// @param context_ Application-defined context value for scope computation.
     /// @param appId_ The app ID that all proofs must target.
-    /// @param maxProofs_ Maximum number of proofs accepted per claim.
-    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_, uint256 appId_, uint256 maxProofs_)
-        BringIDGatedWithContext(registry_, context_, appId_, maxProofs_)
+    constructor(ICredentialRegistry registry_, uint256 minScore_, uint256 context_, uint256 appId_)
+        BringIDGatedWithContext(registry_, context_, appId_)
     {
         MIN_SCORE = minScore_;
     }

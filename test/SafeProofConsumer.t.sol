@@ -57,7 +57,7 @@ contract SafeProofConsumerTest is Test {
         appId = registry.registerApp(0);
 
         // Deploy SafeAirdrop pinned to appId
-        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId, 15);
+        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId);
     }
 
     // --- Helper functions ---
@@ -308,31 +308,6 @@ contract SafeProofConsumerTest is Test {
         });
 
         vm.expectRevert(abi.encodeWithSelector(BringIDGated.AppIdMismatch.selector, appId, attackerAppId));
-        airdrop.claim(alice, proofs);
-    }
-
-    function testClaimRevertsTooManyProofs() public {
-        address alice = makeAddr("alice");
-        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
-
-        // Create 16 proofs (exceeds MAX_PROOFS = 15)
-        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](16);
-        for (uint256 i = 0; i < 16; i++) {
-            proofs[i] = ICredentialRegistry.CredentialGroupProof({
-                credentialGroupId: i + 1,
-                appId: appId,
-                semaphoreProof: ISemaphore.SemaphoreProof({
-                    merkleTreeDepth: 0,
-                    merkleTreeRoot: 0,
-                    nullifier: 0,
-                    message: correctMessage,
-                    scope: 0,
-                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
-                })
-            });
-        }
-
-        vm.expectRevert(BringIDGated.TooManyProofs.selector);
         airdrop.claim(alice, proofs);
     }
 

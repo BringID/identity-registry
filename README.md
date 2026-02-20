@@ -52,13 +52,37 @@ When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gatin
 
 | Contract | Use when… |
 |----------|-----------|
-| `BringIDGatedWithContext` | Fixed context value, need app ID + proof count validation |
-| `BringIDGated` | Dynamic context value (e.g. per-action), need app ID + proof count validation |
+| `BringIDGated` | Dynamic context value (e.g. per-action), need app ID validation |
+| `BringIDGatedWithContext` | Fixed context value, need app ID validation |
 | `SafeProofConsumer` | Only need message binding, handle everything else yourself |
 
-### Quick start — `BringIDGatedWithContext` (recommended)
+### Quick start — `BringIDGated` (recommended)
 
-Handles proof count limits, app ID validation, message binding, and proof submission. Your contract only needs to check the returned score.
+Handles app ID validation, message binding, and proof submission. Your contract only needs to check the returned score.
+
+```solidity
+import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+
+contract MyGate is BringIDGated {
+    constructor(ICredentialRegistry registry_, uint256 appId_)
+        BringIDGated(registry_, appId_)
+    {}
+
+    function doAction(
+        address recipient_,
+        uint256 context_,
+        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
+    ) external {
+        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
+        // ... use score ...
+    }
+}
+```
+
+### Fixed context — `BringIDGatedWithContext`
+
+When the context value is fixed for the lifetime of the contract, inherit `BringIDGatedWithContext` for a simpler 2-parameter `_submitAndValidate`:
 
 ```solidity
 import {BringIDGatedWithContext} from "@bringid/contracts/BringIDGatedWithContext.sol";
@@ -73,9 +97,8 @@ contract MyAirdrop is BringIDGatedWithContext {
         ICredentialRegistry registry_,
         uint256 minScore_,
         uint256 context_,
-        uint256 appId_,
-        uint256 maxProofs_
-    ) BringIDGatedWithContext(registry_, context_, appId_, maxProofs_) {
+        uint256 appId_
+    ) BringIDGatedWithContext(registry_, context_, appId_) {
         MIN_SCORE = minScore_;
     }
 
@@ -83,36 +106,12 @@ contract MyAirdrop is BringIDGatedWithContext {
         address recipient_,
         ICredentialRegistry.CredentialGroupProof[] calldata proofs_
     ) external {
-        // Validates proof count, app IDs, message binding, submits to registry
+        // Validates app IDs, message binding, submits to registry
         uint256 score = _submitAndValidate(recipient_, proofs_);
 
         if (score < MIN_SCORE) revert InsufficientScore(score, MIN_SCORE);
 
         // ... distribute tokens to recipient_ ...
-    }
-}
-```
-
-### Dynamic context — `BringIDGated`
-
-When the context value varies per call, inherit `BringIDGated` directly and pass the context explicitly:
-
-```solidity
-import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
-
-contract MyGate is BringIDGated {
-    constructor(ICredentialRegistry registry_, uint256 appId_, uint256 maxProofs_)
-        BringIDGated(registry_, appId_, maxProofs_)
-    {}
-
-    function doAction(
-        address recipient_,
-        uint256 context_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
-    ) external {
-        uint256 score = _submitAndValidate(recipient_, context_, proofs_);
-        // ... use score ...
     }
 }
 ```
