@@ -42,5 +42,6 @@ contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier
 
         DefaultScorer _scorer = new DefaultScorer(msg.sender);
         defaultScorer = address(_scorer);
+        emit DefaultScorerUpdated(address(0), address(_scorer));
     }
 }
