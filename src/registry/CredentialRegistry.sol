@@ -23,6 +23,10 @@ import {RegistryStorage} from "./base/RegistryStorage.sol";
 /// group, created lazily on first credential registration. Since Semaphore enforces
 /// per-group nullifier uniqueness, separate groups per app naturally prevent cross-app
 /// proof replay.
+///
+/// @dev WARNING: The `message` field of the Semaphore proof is NOT validated. Smart contract
+///      callers are vulnerable to mempool front-running unless they validate `message` binding
+///      themselves. See `SafeProofConsumer` for a ready-made helper.
 contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier, RegistryAdmin, AppManager {
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.

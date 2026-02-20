@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import {ICredentialRegistry} from "../registry/ICredentialRegistry.sol";
-import {SafeProofConsumer} from "../registry/SafeProofConsumer.sol";
+import {SafeProofConsumer} from "./SafeProofConsumer.sol";
 
 /// @title SafeAirdrop
 /// @notice Example airdrop contract demonstrating front-running-resistant proof consumption.
@@ -36,9 +36,6 @@ contract SafeAirdrop is SafeProofConsumer {
 
     /// @notice Thrown when the number of proofs exceeds `MAX_PROOFS`.
     error TooManyProofs();
-
-    /// @notice Thrown when two proofs share the same credential group ID.
-    error DuplicateCredentialGroup();
 
     /// @notice Thrown when a proof targets an unexpected app ID.
     /// @param expected The expected app ID.
@@ -74,14 +71,6 @@ contract SafeAirdrop is SafeProofConsumer {
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
     function claim(address recipient_, ICredentialRegistry.CredentialGroupProof[] calldata proofs_) external {
         if (proofs_.length > MAX_PROOFS) revert TooManyProofs();
-
-        for (uint256 i = 1; i < proofs_.length; i++) {
-            for (uint256 j = 0; j < i; j++) {
-                if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
-                    revert DuplicateCredentialGroup();
-                }
-            }
-        }
 
         if (claimed[recipient_]) revert AlreadyClaimed();
 
