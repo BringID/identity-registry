@@ -162,7 +162,7 @@ const message = ethers.solidityPackedKeccak256(["address"], [recipient]);
 const proof = await generateProof(identity, group, message, scope);
 ```
 
-See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`contracts/examples/SafeAirdrop.sol`](contracts/examples/SafeAirdrop.sol) for a complete example.
+See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`contracts/examples/SimpleAirdrop.sol`](contracts/examples/SimpleAirdrop.sol) for a complete example.
 
 ## Usage
 

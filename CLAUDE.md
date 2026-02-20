@@ -113,7 +113,7 @@ contracts/
 │   ├── DefaultScorer.sol        ← reference IScorer implementation
 │   └── ScorerFactory.sol        ← factory for app admins
 └── examples/
-    └── SafeAirdrop.sol          ← reference consumer using BringIDGatedWithContext
+    └── SimpleAirdrop.sol        ← reference consumer using BringIDGated
 ```
 
 - **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
@@ -125,7 +125,7 @@ contracts/
 - **BringIDGatedWithContext.sol** — Convenience layer over `BringIDGated` that stores a fixed `CONTEXT` immutable. Provides a 2-parameter `_submitAndValidate(recipient, proofs)` overload that passes the stored context. Inherit this when your contract uses a single, fixed context value; inherit `BringIDGated` directly for dynamic context values. Constructor takes `registry_`, `context_`, and `appId_`.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
 - **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
-- **SafeAirdrop.sol** — Example airdrop contract inheriting `BringIDGatedWithContext`, demonstrating front-running-resistant proof consumption with its own `MIN_SCORE` threshold and `InsufficientScore` error.
+- **SimpleAirdrop.sol** — Example airdrop contract inheriting `BringIDGated`, demonstrating front-running-resistant proof consumption with its own `MIN_SCORE` threshold and `InsufficientScore` error.
 
 ### Core implementation (`src/registry/`)
 
