@@ -61,8 +61,8 @@ For a non-zero fixed context, store your own `CONTEXT` immutable and call the 3-
 | Function | Visibility | Description |
 |----------|-----------|-------------|
 | `expectedMessage(address)` | `public pure` | Returns the expected message value for a recipient. Use off-chain to set the message when generating proofs. |
-| `_validateMessageBinding(proof, recipient)` | `internal pure` | Validates a single proof's message binding. Reverts `ZeroRecipient` or `MessageBindingMismatch`. |
-| `_validateMessageBindings(proofs, recipient)` | `internal pure` | Validates all proofs in an array. |
+| `_validateRecipientBinding(proof, recipient)` | `internal pure` | Validates a single proof's recipient binding. Reverts `ZeroRecipient` or `MessageBindingMismatch`. |
+| `_validateRecipientBindings(proofs, recipient)` | `internal pure` | Validates all proofs in an array. |
 | `_submitProofsForRecipient(recipient, proofs)` | `internal virtual` | Validates app IDs, message binding, submits proofs with context=0. Returns aggregate score. |
 | `_submitProofsForRecipient(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs with explicit context. Returns aggregate score. |
 

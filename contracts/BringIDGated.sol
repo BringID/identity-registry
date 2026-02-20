@@ -111,7 +111,7 @@ abstract contract BringIDGated is IBringIDGated {
             }
         }
 
-        _validateMessageBindings(proofs_, recipient_);
+        _validateRecipientBindings(proofs_, recipient_);
 
         bringIDScore = REGISTRY.submitProofs(context_, proofs_);
     }
@@ -119,7 +119,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Validates that a single proof's message is bound to the intended recipient.
     /// @param proof_ The credential group proof to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function _validateMessageBinding(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
+    function _validateRecipientBinding(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
         internal
         pure
     {
@@ -133,7 +133,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @notice Validates that all proofs' messages are bound to the intended recipient.
     /// @param proofs_ Array of credential group proofs to validate.
     /// @param recipient_ The intended recipient address (must not be zero).
-    function _validateMessageBindings(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
+    function _validateRecipientBindings(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
         internal
         pure
     {
