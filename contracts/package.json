@@ -4,7 +4,8 @@
   "description": "Solidity interfaces, consumer helpers, and scorer contracts for the BringID Credential Registry",
   "license": "MIT",
   "files": [
-    "**/*.sol"
+    "**/*.sol",
+    "!registry/**"
   ],
   "peerDependencies": {
     "@semaphore-protocol/contracts": "^4.14.0",

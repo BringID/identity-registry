@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
+import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 import {Script, console} from "forge-std/Script.sol";
 

@@ -17,8 +17,8 @@ Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). B
 ```bash
 make install              # Install dependencies (yarn)
 forge build               # Compile contracts
-forge fmt --check src/ contracts/ test/ script/   # Check formatting (CI enforces this)
-forge fmt src/ contracts/ test/ script/            # Auto-format
+forge fmt --check contracts/ test/ script/   # Check formatting (CI enforces this)
+forge fmt contracts/ test/ script/            # Auto-format
 make test                 # Run tests (forge test --summary)
 make test-all             # Run all tests with --via-ir --ffi
 make test-registry        # CredentialRegistry tests only (requires --ffi)
@@ -97,7 +97,7 @@ identity = new Identity(seed)
 
 ### `@bringid/contracts` package (`contracts/`)
 
-The `contracts/` directory is the public API surface, published as the `@bringid/contracts` npm package. External developers import from here (e.g. `import "@bringid/contracts/ICredentialRegistry.sol"`). Internal `src/` code also imports via the same `@bringid/contracts/...` paths (resolved by the `@bringid/contracts/=contracts/` remapping in `remappings.txt`).
+The `contracts/` directory contains all Solidity source code and is also the public API surface, published as the `@bringid/contracts` npm package. External developers import from here (e.g. `import "@bringid/contracts/ICredentialRegistry.sol"`). Internal implementation lives in `contracts/registry/` (excluded from npm via `files` in `package.json`). All internal imports use `@bringid/contracts/...` paths (resolved by the `@bringid/contracts/=contracts/` remapping in `remappings.txt`).
 
 ```
 contracts/
@@ -112,8 +112,18 @@ contracts/
 ├── scoring/
 │   ├── DefaultScorer.sol        ← reference IScorer implementation
 │   └── ScorerFactory.sol        ← factory for app admins
-└── examples/
-    └── SimpleAirdrop.sol        ← reference consumer using BringIDGated
+├── examples/
+│   └── SimpleAirdrop.sol        ← reference consumer using BringIDGated
+└── registry/                    ← internal implementation (excluded from npm)
+    ├── CredentialRegistry.sol   ← main contract (thin facade)
+    └── base/
+        ├── RegistryStorage.sol
+        ├── AttestationVerifier.sol
+        ├── CredentialManager.sol
+        ├── RecoveryManager.sol
+        ├── ProofVerifier.sol
+        ├── RegistryAdmin.sol
+        └── AppManager.sol
 ```
 
 - **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
@@ -127,7 +137,7 @@ contracts/
 - **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
 - **SimpleAirdrop.sol** — Example airdrop contract inheriting `BringIDGated`, demonstrating front-running-resistant proof consumption with its own `MIN_SCORE` threshold and `InsufficientScore` error.
 
-### Core implementation (`src/registry/`)
+### Core implementation (`contracts/registry/`)
 
 - **CredentialRegistry.sol** — Main contract (thin facade). Owner creates credential groups (metadata only — status). Per-app Semaphore groups are created lazily on first credential registration for each (credentialGroup, app) pair via `appSemaphoreGroups` mapping. Credential lifecycle has three distinct operations: `registerCredential()` for first-time registration with a verifier-signed attestation; `renewCredential()` for renewing previously-registered credentials (same identity commitment, resets validity duration); and `initiateRecovery()` / `executeRecovery()` for timelocked key replacement (changes identity commitment, does NOT update validity duration). Proof API has state-changing and view variants: `submitProof()` (returns the credential group score) / `submitProofs()` consume Semaphore nullifiers (binding proofs to the caller via `scope == keccak256(abi.encode(msg.sender, context))`); `verifyProof()` / `verifyProofs()` are view-only counterparts using Semaphore's `verifyProof()` that don't consume nullifiers; `getScore()` is a view that verifies proofs and returns the aggregate score. Since each app has its own Semaphore group, cross-app proof replay is naturally prevented. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Deploys a `DefaultScorer` in the constructor.
 
@@ -232,9 +242,9 @@ Import remappings are defined in `remappings.txt`.
 GitHub Actions (`.github/workflows/test.yml`). Triggered on push, PR, and manual dispatch. Steps:
 
 1. **Install** — Foundry toolchain + `yarn install --frozen-lockfile` (for `@semaphore-protocol` and other npm deps)
-2. **Format check** — `forge fmt --check src/ contracts/ test/ script/`
+2. **Format check** — `forge fmt --check contracts/ test/ script/`
 3. **Build** — `forge build --sizes` (uses `ci` profile, `via_ir = false`)
-4. **Build (via-ir, src only)** — `FOUNDRY_PROFILE=default forge build --skip test --skip script` (uses default profile, `via_ir = true`). Compiles only `src/` contracts and their imports (lightweight Semaphore interfaces). Skips test/script to avoid compiling heavy Semaphore implementation (`Semaphore.sol`, `SemaphoreVerifier.sol`, `PoseidonT3`).
+4. **Build (via-ir, contracts only)** — `FOUNDRY_PROFILE=default forge build --skip test --skip script` (uses default profile, `via_ir = true`). Compiles only `contracts/` source and their imports (lightweight Semaphore interfaces). Skips test/script to avoid compiling heavy Semaphore implementation (`Semaphore.sol`, `SemaphoreVerifier.sol`, `PoseidonT3`).
 5. **Upload artifacts** — Uploads via-ir compiled `CredentialRegistry.sol/` and `DefaultScorer.sol/` as GitHub Actions artifacts. Download with `gh run download <run-id> -n via-ir-contracts`.
 6. **Tests** — `forge test --ffi -vvv` (uses `ci` profile, `via_ir = false`)
 

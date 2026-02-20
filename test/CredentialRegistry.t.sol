@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
+import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 import {IScorer} from "@bringid/contracts/IScorer.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";

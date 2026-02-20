@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
-import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
+import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";

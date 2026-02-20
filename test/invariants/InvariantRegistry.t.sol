@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Test} from "forge-std/Test.sol";
-import {CredentialRegistry} from "../../src/registry/CredentialRegistry.sol";
+import {CredentialRegistry} from "../../contracts/registry/CredentialRegistry.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
