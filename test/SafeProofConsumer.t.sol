@@ -52,7 +52,7 @@ contract SafeProofConsumerTest is Test {
         appId = registry.registerApp(0);
 
         // Deploy SafeAirdrop pinned to appId
-        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId);
+        airdrop = new SafeAirdrop(ICredentialRegistry(address(registry)), MIN_SCORE, CONTEXT, appId, 15);
     }
 
     // --- Helper functions ---
@@ -213,6 +213,9 @@ contract SafeProofConsumerTest is Test {
     }
 
     function testMultipleProofsOneMismatchReverts() public {
+        uint256 credentialGroupId2 = 2;
+        registry.createCredentialGroup(credentialGroupId2, 0, 0);
+
         address alice = makeAddr("alice");
         uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
         uint256 wrongMessage = uint256(keccak256(abi.encodePacked(makeAddr("wrong"))));
@@ -231,9 +234,9 @@ contract SafeProofConsumerTest is Test {
                 points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
             })
         });
-        // Second proof has wrong message
+        // Second proof has wrong message and different credential group
         proofs[1] = ICredentialRegistry.CredentialGroupProof({
-            credentialGroupId: CREDENTIAL_GROUP_ID,
+            credentialGroupId: credentialGroupId2,
             appId: appId,
             semaphoreProof: ISemaphore.SemaphoreProof({
                 merkleTreeDepth: 0,
@@ -300,6 +303,65 @@ contract SafeProofConsumerTest is Test {
         });
 
         vm.expectRevert(abi.encodeWithSelector(SafeAirdrop.AppIdMismatch.selector, appId, attackerAppId));
+        airdrop.claim(alice, proofs);
+    }
+
+    function testClaimRevertsTooManyProofs() public {
+        address alice = makeAddr("alice");
+        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
+
+        // Create 16 proofs (exceeds MAX_PROOFS = 15)
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](16);
+        for (uint256 i = 0; i < 16; i++) {
+            proofs[i] = ICredentialRegistry.CredentialGroupProof({
+                credentialGroupId: i + 1,
+                appId: appId,
+                semaphoreProof: ISemaphore.SemaphoreProof({
+                    merkleTreeDepth: 0,
+                    merkleTreeRoot: 0,
+                    nullifier: 0,
+                    message: correctMessage,
+                    scope: 0,
+                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+                })
+            });
+        }
+
+        vm.expectRevert(SafeAirdrop.TooManyProofs.selector);
+        airdrop.claim(alice, proofs);
+    }
+
+    function testClaimRevertsDuplicateCredentialGroupId() public {
+        address alice = makeAddr("alice");
+        uint256 correctMessage = uint256(keccak256(abi.encodePacked(alice)));
+
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: CREDENTIAL_GROUP_ID,
+            appId: appId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: correctMessage,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: CREDENTIAL_GROUP_ID,
+            appId: appId,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: correctMessage,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(SafeAirdrop.DuplicateCredentialGroup.selector);
         airdrop.claim(alice, proofs);
     }
 

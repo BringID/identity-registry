@@ -56,6 +56,7 @@ error RecoveryTimelockNotExpired();
 error ScopeMismatch();
 error NoSemaphoreGroup();
 error InvalidProof();
+error DuplicateCredentialGroup();
 
 // ──────────────────────────────────────────────
 //  Registry admin

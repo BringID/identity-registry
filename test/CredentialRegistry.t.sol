@@ -3007,4 +3007,68 @@ contract CredentialRegistryTest is Test {
         registry.addTrustedVerifier(address(0x1234));
         assertTrue(registry.trustedVerifiers(address(0x1234)));
     }
+
+    // --- Duplicate credential group tests ---
+
+    function testSubmitProofsRevertsDuplicateCredentialGroupId() public {
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.submitProofs(0, proofs);
+    }
+
+    function testGetScoreRevertsDuplicateCredentialGroupId() public {
+        ICredentialRegistry.CredentialGroupProof[] memory proofs = new ICredentialRegistry.CredentialGroupProof[](2);
+        proofs[0] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+        proofs[1] = ICredentialRegistry.CredentialGroupProof({
+            credentialGroupId: 1,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.getScore(0, proofs);
+    }
 }
