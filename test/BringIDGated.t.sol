@@ -6,7 +6,6 @@ import {CredentialRegistry} from "../contracts/registry/CredentialRegistry.sol";
 import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {SimpleAirdrop} from "@bringid/contracts/examples/SimpleAirdrop.sol";
-import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
@@ -15,7 +14,7 @@ import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
 
-contract SafeProofConsumerTest is Test {
+contract BringIDGatedTest is Test {
     using ECDSA for bytes32;
 
     // Pre-computed Semaphore commitment for deterministic test key (avoids FFI per-test).
@@ -161,9 +160,7 @@ contract SafeProofConsumerTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(alice)));
         uint256 actualMsg = uint256(keccak256(abi.encodePacked(bob)));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, expectedMsg, actualMsg)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
         airdrop.claim(alice, proofs);
     }
 
@@ -182,7 +179,7 @@ contract SafeProofConsumerTest is Test {
             })
         });
 
-        vm.expectRevert(SafeProofConsumer.ZeroRecipient.selector);
+        vm.expectRevert(BringIDGated.ZeroRecipient.selector);
         airdrop.claim(address(0), proofs);
     }
 
@@ -205,9 +202,7 @@ contract SafeProofConsumerTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(bob)));
         uint256 actualMsg = proofs[0].semaphoreProof.message;
 
-        vm.expectRevert(
-            abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, expectedMsg, actualMsg)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
         airdrop.claim(bob, proofs);
 
         // Alice's claim succeeds
@@ -253,7 +248,7 @@ contract SafeProofConsumerTest is Test {
         });
 
         vm.expectRevert(
-            abi.encodeWithSelector(SafeProofConsumer.MessageBindingMismatch.selector, correctMessage, wrongMessage)
+            abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, correctMessage, wrongMessage)
         );
         airdrop.claim(alice, proofs);
     }

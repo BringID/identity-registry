@@ -31,11 +31,9 @@ The `message` field is the correct place for recipient binding because it is ver
 
 ## The Solution: Message Binding
 
-The `@bringid/contracts` package provides three abstraction levels. All handle message binding; the higher-level contracts also enforce app ID matching.
+The `@bringid/contracts` package provides `BringIDGated` — an abstract base that handles message binding, app ID validation, and proof submission in a single `_submitProofsForRecipient` call. Your contract only needs to check the returned score. Context defaults to `0`; use the 3-parameter overload for a custom context.
 
 ### Recommended: `BringIDGated`
-
-Handles message binding, app ID validation, and proof submission in a single `_submitProofsForRecipient` call. Your contract only needs to check the returned score. Context defaults to `0`; use the 3-parameter overload for a custom context.
 
 ```solidity
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
@@ -58,57 +56,13 @@ contract MyGate is BringIDGated {
 
 For a non-zero fixed context, store your own `CONTEXT` immutable and call the 3-parameter overload `_submitProofsForRecipient(recipient, CONTEXT, proofs)` directly.
 
-### Low-level: `SafeProofConsumer`
-
-For full control (custom validation logic, non-standard message semantics), inherit `SafeProofConsumer` and call the registry directly:
-
-```solidity
-import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
-
-contract MyCustomConsumer is SafeProofConsumer {
-    constructor(ICredentialRegistry registry_)
-        SafeProofConsumer(registry_)
-    {}
-
-    function claim(
-        address recipient_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
-    ) external {
-        // Validates message == hash(recipient) for every proof
-        _validateMessageBindings(proofs_, recipient_);
-
-        // Forward to registry (safe — message is bound)
-        uint256 score = REGISTRY.submitProofs(CONTEXT, proofs_);
-
-        // ... distribute tokens to recipient_ ...
-    }
-}
-```
-
-The helper computes `expectedMessage(recipient) = uint256(keccak256(abi.encodePacked(recipient)))` and checks that every proof's `semaphoreProof.message` matches.
-
-### Contract hierarchy
-
-```
-SafeProofConsumer (REGISTRY)          ← message binding only
-    │
-BringIDGated (APP_ID)                ← + app ID validation
-                                        _submitProofsForRecipient(recipient, proofs) [context=0]
-                                        _submitProofsForRecipient(recipient, context, proofs) [explicit]
-```
-
-### SafeProofConsumer API
+### BringIDGated API
 
 | Function | Visibility | Description |
 |----------|-----------|-------------|
 | `expectedMessage(address)` | `public pure` | Returns the expected message value for a recipient. Use off-chain to set the message when generating proofs. |
 | `_validateMessageBinding(proof, recipient)` | `internal pure` | Validates a single proof's message binding. Reverts `ZeroRecipient` or `MessageBindingMismatch`. |
 | `_validateMessageBindings(proofs, recipient)` | `internal pure` | Validates all proofs in an array. |
-
-### BringIDGated API
-
-| Function | Visibility | Description |
-|----------|-----------|-------------|
 | `_submitProofsForRecipient(recipient, proofs)` | `internal virtual` | Validates app IDs, message binding, submits proofs with context=0. Returns aggregate score. |
 | `_submitProofsForRecipient(recipient, context, proofs)` | `internal` | Validates app IDs, message binding, submits proofs with explicit context. Returns aggregate score. |
 
@@ -139,7 +93,7 @@ Not all use cases bind the message to a simple recipient address. You may want t
 - An action hash for governance voting
 - A commitment to off-chain data
 
-In these cases, do **not** use `SafeProofConsumer`. Instead, compute your custom expected message and check it manually:
+In these cases, do **not** use the built-in message binding helpers. Instead, compute your custom expected message and check it manually:
 
 ```solidity
 uint256 expectedMsg = uint256(keccak256(abi.encode(recipient, amount)));
@@ -157,4 +111,4 @@ The key principle is the same: the proof's `message` field must commit to all ac
 
 Both layers are needed for safe on-chain proof consumption. The registry enforces scope binding; your contract must enforce message binding.
 
-For most integrations, inherit `BringIDGated` — it handles both message binding and proof submission. Only use `SafeProofConsumer` directly if you need custom validation logic.
+For most integrations, inherit `BringIDGated` — it handles message binding, app ID validation, and proof submission. For custom message semantics, compute your own expected message and validate manually.

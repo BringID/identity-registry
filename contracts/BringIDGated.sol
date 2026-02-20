@@ -2,19 +2,36 @@
 pragma solidity 0.8.23;
 
 import {ICredentialRegistry} from "./ICredentialRegistry.sol";
-import {SafeProofConsumer} from "./SafeProofConsumer.sol";
 
 /// @title BringIDGated
 /// @notice Abstract base for contracts that validate and submit BringID credential proofs.
-///         Enforces app ID matching, then submits proofs to the registry.
-/// @dev Inherit this contract and call `_submitProofsForRecipient()` to perform the validation flow:
+///         Validates that the Semaphore proof `message` field is bound to an intended
+///         recipient address (preventing mempool front-running), enforces app ID matching,
+///         then submits proofs to the registry.
+/// @dev When a smart contract calls `registry.submitProofs()`, the `scope` is bound to
+///      `msg.sender` (the contract) + `context`. Any user can copy the proof from the
+///      mempool and submit it first through the same contract, because `msg.sender` is
+///      identical. Binding the `message` field to the intended recipient makes copied
+///      proofs useless to the attacker.
+///
+///      Inherit this contract and call `_submitProofsForRecipient()` to perform the validation flow:
 ///      1. Validate each proof targets APP_ID
 ///      2. Validate message binding to recipient
 ///      3. Submit proofs to the registry (consuming nullifiers)
 ///      Score threshold checking is the consumer's responsibility.
-abstract contract BringIDGated is SafeProofConsumer {
+abstract contract BringIDGated {
+    ICredentialRegistry public immutable REGISTRY;
+
     /// @notice The app ID that all proofs must target.
     uint256 public immutable APP_ID;
+
+    /// @notice Thrown when a proof's message does not match the expected recipient binding.
+    /// @param expected The expected message value (hash of the recipient address).
+    /// @param actual The actual message value found in the proof.
+    error MessageBindingMismatch(uint256 expected, uint256 actual);
+
+    /// @notice Thrown when the recipient address is the zero address.
+    error ZeroRecipient();
 
     /// @notice Thrown when a proof targets an unexpected app ID.
     /// @param expected The expected app ID.
@@ -23,8 +40,16 @@ abstract contract BringIDGated is SafeProofConsumer {
 
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param appId_ The app ID that all proofs must target.
-    constructor(ICredentialRegistry registry_, uint256 appId_) SafeProofConsumer(registry_) {
+    constructor(ICredentialRegistry registry_, uint256 appId_) {
+        REGISTRY = registry_;
         APP_ID = appId_;
+    }
+
+    /// @notice Computes the expected Semaphore `message` value for a given recipient.
+    /// @param recipient_ The intended recipient address.
+    /// @return The expected message: `uint256(keccak256(abi.encodePacked(recipient_)))`.
+    function expectedMessage(address recipient_) public pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(recipient_)));
     }
 
     /// @notice Validates proofs and submits them to the registry using context = 0.
@@ -62,5 +87,35 @@ abstract contract BringIDGated is SafeProofConsumer {
         _validateMessageBindings(proofs_, recipient_);
 
         bringIDScore = REGISTRY.submitProofs(context_, proofs_);
+    }
+
+    /// @notice Validates that a single proof's message is bound to the intended recipient.
+    /// @param proof_ The credential group proof to validate.
+    /// @param recipient_ The intended recipient address (must not be zero).
+    function _validateMessageBinding(ICredentialRegistry.CredentialGroupProof calldata proof_, address recipient_)
+        internal
+        pure
+    {
+        if (recipient_ == address(0)) revert ZeroRecipient();
+        uint256 expected = expectedMessage(recipient_);
+        if (proof_.semaphoreProof.message != expected) {
+            revert MessageBindingMismatch(expected, proof_.semaphoreProof.message);
+        }
+    }
+
+    /// @notice Validates that all proofs' messages are bound to the intended recipient.
+    /// @param proofs_ Array of credential group proofs to validate.
+    /// @param recipient_ The intended recipient address (must not be zero).
+    function _validateMessageBindings(ICredentialRegistry.CredentialGroupProof[] calldata proofs_, address recipient_)
+        internal
+        pure
+    {
+        if (recipient_ == address(0)) revert ZeroRecipient();
+        uint256 expected = expectedMessage(recipient_);
+        for (uint256 i = 0; i < proofs_.length; i++) {
+            if (proofs_[i].semaphoreProof.message != expected) {
+                revert MessageBindingMismatch(expected, proofs_[i].semaphoreProof.message);
+            }
+        }
     }
 }

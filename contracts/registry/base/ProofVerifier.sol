@@ -27,7 +27,7 @@ abstract contract ProofVerifier is RegistryStorage {
     ///      proof from the mempool and front-run the original transaction through the same
     ///      contract, because `msg.sender` (and therefore `scope`) will be identical.
     ///      Smart contract callers SHOULD bind the `message` field to the intended
-    ///      recipient or action to prevent this. See `SafeProofConsumer` for a ready-made
+    ///      recipient or action to prevent this. See `BringIDGated` for a ready-made
     ///      helper that enforces message binding.
     /// @param context_ Application-defined context value. Combined with msg.sender to
     ///        compute the expected scope, allowing the same user to generate distinct
@@ -55,7 +55,7 @@ abstract contract ProofVerifier is RegistryStorage {
     ///      smart contract calls `submitProofs()`, proofs can be front-run through the same
     ///      contract because `msg.sender` (and therefore `scope`) is identical for any
     ///      caller. Smart contract callers SHOULD validate `message` binding before
-    ///      forwarding proofs. See `SafeProofConsumer` for a ready-made helper.
+    ///      forwarding proofs. See `BringIDGated` for a ready-made helper.
     /// @param context_ Application-defined context value (see submitProof).
     /// @param proofs_ Array of credential group proofs to submit.
     /// @return _score The total score across all validated credential groups.

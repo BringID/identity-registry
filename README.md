@@ -48,16 +48,9 @@ Contract addresses are identical on both chains (same deployer, same nonce).
 
 When a smart contract consumes BringID proofs on-chain (e.g. an airdrop or gating contract), the Semaphore `scope` is bound to `msg.sender` + `context`. This means any transaction routed through the same contract shares the same scope — an attacker can copy proofs from the mempool and front-run the original caller.
 
-**Solution:** Bind the Semaphore `message` field to the intended recipient. The `@bringid/contracts` package provides two levels of abstraction:
+**Solution:** Bind the Semaphore `message` field to the intended recipient. The `@bringid/contracts` package provides `BringIDGated` — an abstract base that handles app ID validation, message binding, and proof submission. Your contract only needs to check the returned score.
 
-| Contract | Use when… |
-|----------|-----------|
-| `BringIDGated` | Need app ID validation + proof submission (recommended) |
-| `SafeProofConsumer` | Only need message binding, handle everything else yourself |
-
-### Quick start — `BringIDGated` (recommended)
-
-Handles app ID validation, message binding, and proof submission. Your contract only needs to check the returned score.
+### Quick start — `BringIDGated`
 
 ```solidity
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
@@ -78,38 +71,6 @@ contract MyGate is BringIDGated {
 }
 ```
 
-### Low-level — `SafeProofConsumer`
-
-For full control, inherit `SafeProofConsumer` and call the registry directly:
-
-```solidity
-import {SafeProofConsumer} from "@bringid/contracts/SafeProofConsumer.sol";
-import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
-
-contract MyCustomConsumer is SafeProofConsumer {
-    uint256 public immutable CONTEXT;
-
-    constructor(ICredentialRegistry registry_, uint256 context_)
-        SafeProofConsumer(registry_)
-    {
-        CONTEXT = context_;
-    }
-
-    function claim(
-        address recipient_,
-        ICredentialRegistry.CredentialGroupProof[] calldata proofs_
-    ) external {
-        // Reverts if any proof's message != hash(recipient_)
-        _validateMessageBindings(proofs_, recipient_);
-
-        // Safe to forward — message is bound to recipient
-        uint256 score = REGISTRY.submitProofs(CONTEXT, proofs_);
-
-        // ... distribute tokens to recipient_ ...
-    }
-}
-```
-
 ### Off-chain proof generation
 
 When generating proofs for a message-binding-aware contract, set the `message` to `keccak256(abi.encodePacked(recipientAddress))`:
@@ -124,7 +85,7 @@ const message = ethers.solidityPackedKeccak256(["address"], [recipient]);
 const proof = await generateProof(identity, group, message, scope);
 ```
 
-See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`contracts/examples/SimpleAirdrop.sol`](contracts/examples/SimpleAirdrop.sol) for a complete example.
+See [`docs/proof-message-binding.md`](docs/proof-message-binding.md) for a full explanation of scope vs. message, why putting the recipient in `context` breaks sybil resistance, and patterns for custom message semantics. See [`contracts/examples/SimpleAirdrop.sol`](contracts/examples/SimpleAirdrop.sol) for a complete example. For custom message semantics beyond simple recipient binding, compute your own expected message and validate manually.
 
 ## Usage
 

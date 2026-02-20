@@ -26,7 +26,7 @@ import {RegistryStorage} from "./base/RegistryStorage.sol";
 ///
 /// @dev WARNING: The `message` field of the Semaphore proof is NOT validated. Smart contract
 ///      callers are vulnerable to mempool front-running unless they validate `message` binding
-///      themselves. See `SafeProofConsumer` for a ready-made helper.
+///      themselves. See `BringIDGated` for a ready-made helper.
 contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier, RegistryAdmin, AppManager {
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
