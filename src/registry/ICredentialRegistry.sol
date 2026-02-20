@@ -191,17 +191,51 @@ interface ICredentialRegistry {
     /// @return True if the proof is valid.
     function verifyProof(uint256 context_, CredentialGroupProof calldata proof) external view returns (bool);
 
+    /// @notice Verifies a single ZK proof for a specific sender without consuming the nullifier (view-only).
+    /// @dev Computes scope as keccak256(sender_, context_) instead of using msg.sender. Useful for
+    ///      off-chain callers pre-checking proofs destined for a contract consumer.
+    /// @param sender_ The address to use for scope computation.
+    /// @param context_ Application-defined context value.
+    /// @param proof The credential group proof to verify.
+    /// @return True if the proof is valid.
+    function verifyProofFor(address sender_, uint256 context_, CredentialGroupProof calldata proof)
+        external
+        view
+        returns (bool);
+
     /// @notice Verifies multiple ZK proofs without consuming nullifiers (view-only).
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
     function verifyProofs(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (bool);
 
+    /// @notice Verifies multiple ZK proofs for a specific sender without consuming nullifiers (view-only).
+    /// @dev Computes scope as keccak256(sender_, context_) instead of using msg.sender.
+    /// @param sender_ The address to use for scope computation.
+    /// @param context_ Application-defined context value.
+    /// @param proofs Array of credential group proofs to verify.
+    /// @return True if all proofs are valid.
+    function verifyProofsFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs)
+        external
+        view
+        returns (bool);
+
     /// @notice Verifies multiple proofs and returns the aggregate score (view-only).
     /// @param context_ Application-defined context value combined with msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
     function getScore(uint256 context_, CredentialGroupProof[] calldata proofs) external view returns (uint256);
+
+    /// @notice Verifies multiple proofs for a specific sender and returns the aggregate score (view-only).
+    /// @dev Computes scope as keccak256(sender_, context_) instead of using msg.sender.
+    /// @param sender_ The address to use for scope computation.
+    /// @param context_ Application-defined context value.
+    /// @param proofs Array of credential group proofs to verify and score.
+    /// @return The total score across all verified credential groups.
+    function getScoreFor(address sender_, uint256 context_, CredentialGroupProof[] calldata proofs)
+        external
+        view
+        returns (uint256);
 
     // ── Credential expiry ───────────────────────
 
