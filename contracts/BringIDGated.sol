@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
+import {IBringIDGated} from "./interfaces/IBringIDGated.sol";
 
 /// @title BringIDGated
 /// @notice Abstract base for contracts that validate and submit BringID credential proofs.
@@ -19,24 +20,11 @@ import {ICredentialRegistry} from "./interfaces/ICredentialRegistry.sol";
 ///      2. Validate message binding to recipient
 ///      3. Submit proofs to the registry (consuming nullifiers)
 ///      Score threshold checking is the consumer's responsibility.
-abstract contract BringIDGated {
+abstract contract BringIDGated is IBringIDGated {
     ICredentialRegistry public immutable REGISTRY;
 
     /// @notice The app ID that all proofs must target.
     uint256 public immutable APP_ID;
-
-    /// @notice Thrown when a proof's message does not match the expected recipient binding.
-    /// @param expected The expected message value (hash of the recipient address).
-    /// @param actual The actual message value found in the proof.
-    error MessageBindingMismatch(uint256 expected, uint256 actual);
-
-    /// @notice Thrown when the recipient address is the zero address.
-    error ZeroRecipient();
-
-    /// @notice Thrown when a proof targets an unexpected app ID.
-    /// @param expected The expected app ID.
-    /// @param actual The actual app ID found in the proof.
-    error AppIdMismatch(uint256 expected, uint256 actual);
 
     /// @param registry_ The BringID CredentialRegistry address.
     /// @param appId_ The app ID that all proofs must target.

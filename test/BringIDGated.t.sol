@@ -7,6 +7,7 @@ import {ICredentialRegistry} from "@bringid/contracts/interfaces/ICredentialRegi
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {SimpleAirdrop} from "@bringid/contracts/examples/SimpleAirdrop.sol";
 import {BringIDGated} from "@bringid/contracts/BringIDGated.sol";
+import {IBringIDGated} from "@bringid/contracts/interfaces/IBringIDGated.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
@@ -187,7 +188,7 @@ contract BringIDGatedTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(alice)));
         uint256 actualMsg = uint256(keccak256(abi.encodePacked(bob)));
 
-        vm.expectRevert(abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
+        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
         airdrop.claim(alice, proofs);
     }
 
@@ -206,7 +207,7 @@ contract BringIDGatedTest is Test {
             })
         });
 
-        vm.expectRevert(BringIDGated.ZeroRecipient.selector);
+        vm.expectRevert(IBringIDGated.ZeroRecipient.selector);
         airdrop.claim(address(0), proofs);
     }
 
@@ -229,7 +230,7 @@ contract BringIDGatedTest is Test {
         uint256 expectedMsg = uint256(keccak256(abi.encodePacked(bob)));
         uint256 actualMsg = proofs[0].semaphoreProof.message;
 
-        vm.expectRevert(abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
+        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, expectedMsg, actualMsg));
         airdrop.claim(bob, proofs);
 
         // Alice's claim succeeds
@@ -275,7 +276,7 @@ contract BringIDGatedTest is Test {
         });
 
         vm.expectRevert(
-            abi.encodeWithSelector(BringIDGated.MessageBindingMismatch.selector, correctMessage, wrongMessage)
+            abi.encodeWithSelector(IBringIDGated.MessageBindingMismatch.selector, correctMessage, wrongMessage)
         );
         airdrop.claim(alice, proofs);
     }
@@ -328,7 +329,7 @@ contract BringIDGatedTest is Test {
             })
         });
 
-        vm.expectRevert(abi.encodeWithSelector(BringIDGated.AppIdMismatch.selector, appId, attackerAppId));
+        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.AppIdMismatch.selector, appId, attackerAppId));
         airdrop.claim(alice, proofs);
     }
 
