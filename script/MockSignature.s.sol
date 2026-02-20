@@ -2,8 +2,8 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {ICredentialRegistry as IRegistry} from "../src/registry/ICredentialRegistry.sol";
-import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
+import {ICredentialRegistry as IRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract Generate is Script {
     using ECDSA for bytes32;

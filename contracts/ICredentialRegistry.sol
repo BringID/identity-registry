@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 
 /// @title ICredentialRegistry
 /// @notice Interface for the BringID Credential Registry — a privacy-preserving credential

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "./Errors.sol";
-import "./Events.sol";
-import {DefaultScorer} from "../scoring/DefaultScorer.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
+import "@bringid/contracts/Errors.sol";
+import "@bringid/contracts/Events.sol";
+import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {AppManager} from "./base/AppManager.sol";
 import {CredentialManager} from "./base/CredentialManager.sol";
 import {ProofVerifier} from "./base/ProofVerifier.sol";

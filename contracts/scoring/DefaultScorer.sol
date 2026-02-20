@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {IScorer} from "../registry/IScorer.sol";
-import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
+import {IScorer} from "../IScorer.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title DefaultScorer
 /// @notice Scoring contract that stores scores per credential group.

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "../Errors.sol";
+import "@bringid/contracts/Errors.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
-import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /// @title AttestationVerifier
 /// @notice Verifies attestation signatures and common checks (active group/app, registry address,

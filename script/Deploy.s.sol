@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {ICredentialRegistry} from "../src/registry/ICredentialRegistry.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
 import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
-import {Semaphore} from "semaphore-protocol/Semaphore.sol";
-import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
+import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 contract Token is ERC20 {

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {CredentialRegistry, ICredentialRegistry} from "../src/registry/CredentialRegistry.sol";
-import {DefaultScorer} from "../src/scoring/DefaultScorer.sol";
+import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 /// @notice Deploys credential groups and sets default scores per

@@ -2,10 +2,10 @@
 pragma solidity ^0.8.23;
 
 import {CredentialRegistry} from "../src/registry/CredentialRegistry.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
-import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
-import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
-import {Semaphore} from "semaphore-protocol/Semaphore.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
+import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
+import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
+import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 /// @notice Deploys everything needed for local e2e testing:

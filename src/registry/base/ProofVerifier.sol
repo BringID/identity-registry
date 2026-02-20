@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "../Errors.sol";
-import "../Events.sol";
-import {IScorer} from "../IScorer.sol";
+import "@bringid/contracts/Errors.sol";
+import "@bringid/contracts/Events.sol";
+import {IScorer} from "@bringid/contracts/IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
 /// @title ProofVerifier

@@ -1,4 +1,5 @@
 {
+  "workspaces": ["contracts"],
   "dependencies": {
     "@semaphore-protocol/contracts": "4.14.2",
     "@semaphore-protocol/core": "^4.11.1",

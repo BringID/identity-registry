@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "../Errors.sol";
-import "../Events.sol";
-import {ICredentialRegistry} from "../ICredentialRegistry.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
-import {Ownable2Step} from "openzeppelin/access/Ownable2Step.sol";
-import {Pausable} from "openzeppelin/security/Pausable.sol";
-import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
+import "@bringid/contracts/Errors.sol";
+import "@bringid/contracts/Events.sol";
+import {ICredentialRegistry} from "@bringid/contracts/ICredentialRegistry.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /// @title RegistryStorage
 /// @notice Base contract holding all state variables, internal helpers, and view helpers

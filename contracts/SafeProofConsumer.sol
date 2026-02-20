@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import {ICredentialRegistry} from "../registry/ICredentialRegistry.sol";
+import {ICredentialRegistry} from "./ICredentialRegistry.sol";
 
 /// @title SafeProofConsumer
 /// @notice Abstract helper for smart contracts that consume BringID credential proofs.
