@@ -40,19 +40,19 @@ contract SimpleAirdrop is BringIDGated {
     /// @notice Claims an airdrop by submitting message-bound credential proofs.
     /// @dev Flow:
     ///      1. Check recipient hasn't already claimed.
-    ///      2. Validate proofs (app ID, message binding) and submit to registry.
-    ///      3. Check aggregate score meets minimum threshold.
-    ///      4. Mark recipient as claimed.
+    ///      2. Mark recipient as claimed (CEI pattern — safe because revert rolls back).
+    ///      3. Validate proofs (app ID, message binding) and submit to registry.
+    ///      4. Check aggregate score meets minimum threshold.
     /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
     /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
     function claim(address recipient_, CredentialProof[] calldata proofs_) external {
         if (claimed[recipient_]) revert AlreadyClaimed();
 
+        claimed[recipient_] = true;
+
         uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
 
         if (bringIDScore < MIN_SCORE) revert InsufficientScore(bringIDScore, MIN_SCORE);
-
-        claimed[recipient_] = true;
 
         emit AirdropClaimed(recipient_, bringIDScore);
     }
