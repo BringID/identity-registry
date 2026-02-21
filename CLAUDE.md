@@ -170,7 +170,7 @@ contracts/
 The CredentialRegistry owner has the following powers:
 
 - **Credential group management**: `createCredentialGroup()`, `suspendCredentialGroup()`, `activateCredentialGroup()` — create, pause, and unpause credential groups. Suspending a group blocks new registrations, renewals, recoveries, and proof submissions for that group.
-- **Credential group configuration**: `setCredentialGroupValidityDuration()`, `setCredentialGroupFamily()` — change validity duration and family ID for existing groups. Only affects future registrations/renewals; existing credentials keep their original values.
+- **Credential group configuration**: `setCredentialGroupValidityDuration()` — change validity duration for existing groups. Only affects future registrations/renewals; existing credentials keep their original values. Family ID is immutable after creation to prevent orphaning existing credential records.
 - **Trusted verifier management**: `addTrustedVerifier()`, `removeTrustedVerifier()` — control which ECDSA signers can authorize credential attestations. Removing a verifier immediately invalidates all future attestations from that signer.
 - **Attestation validity**: `setAttestationValidityDuration()` — set the maximum age of accepted attestations (default 30 minutes, must be > 0).
 - **Emergency controls**: `pause()`, `unpause()` — halt or resume all state-changing user functions (register, renew, submit proofs, recovery, remove expired). View functions remain available while paused.
