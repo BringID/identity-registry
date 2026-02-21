@@ -10,8 +10,6 @@ import {RegistryStorage} from "./RegistryStorage.sol";
 /// @title ProofVerifier
 /// @notice Handles Semaphore proof submission, verification, and score aggregation.
 abstract contract ProofVerifier is RegistryStorage {
-    uint256 internal constant MAX_PROOFS = 20;
-
     // ──────────────────────────────────────────────
     //  Proof validation
     // ──────────────────────────────────────────────
@@ -166,7 +164,6 @@ abstract contract ProofVerifier is RegistryStorage {
 
     /// @dev Reverts if any two proofs share the same credentialGroupId, preventing score inflation.
     function _checkNoDuplicateGroups(CredentialProof[] calldata proofs_) internal pure {
-        if (proofs_.length > MAX_PROOFS) revert TooManyProofs();
         for (uint256 i = 1; i < proofs_.length;) {
             for (uint256 j = 0; j < i;) {
                 if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
