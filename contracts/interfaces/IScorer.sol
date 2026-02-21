@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 /// @title IScorer
 /// @notice Interface for scorer contracts that assign scores to credential groups.
 ///         Each app can use a custom scorer or the global DefaultScorer.
-interface IScorer {
+interface IScorer is IERC165 {
     /// @notice Returns the score for a single credential group.
     /// @param credentialGroupId The credential group ID to look up.
     /// @return The score value for the given credential group.

@@ -7,6 +7,8 @@ import {ICredentialRegistry} from "@bringid/contracts/interfaces/ICredentialRegi
 import {CredentialProof} from "@bringid/contracts/interfaces/Types.sol";
 import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
+import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
 import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
@@ -16,8 +18,12 @@ import {TestUtils} from "./TestUtils.sol";
 import "@bringid/contracts/interfaces/Events.sol";
 import "@bringid/contracts/interfaces/Errors.sol";
 
-contract MockScorer is IScorer {
+contract MockScorer is IScorer, ERC165 {
     mapping(uint256 => uint256) public scores;
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, IERC165) returns (bool) {
+        return interfaceId == type(IScorer).interfaceId || super.supportsInterface(interfaceId);
+    }
 
     function setScore(uint256 credentialGroupId_, uint256 score_) public {
         scores[credentialGroupId_] = score_;
@@ -547,7 +553,7 @@ contract CredentialRegistryTest is Test {
     function testSetAppScorerRejectsNonContract() public {
         address eoa = makeAddr("eoa");
 
-        vm.expectRevert();
+        vm.expectRevert(InvalidScorerContract.selector);
         registry.setAppScorer(DEFAULT_APP_ID, eoa);
     }
 
@@ -555,7 +561,7 @@ contract CredentialRegistryTest is Test {
         // Deploy a contract that doesn't implement getScore
         InvalidScorer invalid = new InvalidScorer();
 
-        vm.expectRevert();
+        vm.expectRevert(InvalidScorerContract.selector);
         registry.setAppScorer(DEFAULT_APP_ID, address(invalid));
     }
 

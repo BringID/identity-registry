@@ -2,13 +2,15 @@
 pragma solidity 0.8.23;
 
 import {IScorer} from "../interfaces/IScorer.sol";
+import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title DefaultScorer
 /// @notice Scoring contract that stores scores per credential group.
 ///         Used as the global default scorer (owned by BringID) and as app-specific
 ///         custom scorers (deployed via ScorerFactory, owned by the app admin).
-contract DefaultScorer is IScorer, Ownable2Step {
+contract DefaultScorer is IScorer, ERC165, Ownable2Step {
     error LengthMismatch();
 
     event ScoreSet(uint256 indexed credentialGroupId, uint256 score);
@@ -20,6 +22,11 @@ contract DefaultScorer is IScorer, Ownable2Step {
     /// @param owner_ The address that will own this scorer.
     constructor(address owner_) {
         _transferOwnership(owner_);
+    }
+
+    /// @notice Returns true if this contract implements the given interface.
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, IERC165) returns (bool) {
+        return interfaceId == type(IScorer).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /// @notice Sets the score for a credential group.

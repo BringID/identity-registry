@@ -80,3 +80,4 @@ error NotAppAdmin();
 error AppNotSuspended();
 error InvalidAdminAddress();
 error NotPendingAdmin();
+error InvalidScorerContract();
