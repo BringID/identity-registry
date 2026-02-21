@@ -15,6 +15,7 @@ import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVer
 import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {TestUtils} from "./TestUtils.sol";
+import "@bringid/contracts/interfaces/Errors.sol";
 
 contract BringIDGatedTest is Test {
     using ECDSA for bytes32;
@@ -156,7 +157,7 @@ contract BringIDGatedTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         CredentialProof[] memory proofs = new CredentialProof[](1);
@@ -220,7 +221,7 @@ contract BringIDGatedTest is Test {
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
 
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), 0)));
         uint256 aliceMessage = uint256(keccak256(abi.encodePacked(alice)));
 
         // Alice generates a proof bound to herself
@@ -288,7 +289,7 @@ contract BringIDGatedTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         CredentialProof[] memory proofs = new CredentialProof[](1);
@@ -324,7 +325,7 @@ contract BringIDGatedTest is Test {
             })
         });
 
-        vm.expectRevert(abi.encodeWithSelector(IBringIDGated.AppIdMismatch.selector, appId, attackerAppId));
+        vm.expectRevert(AppIdMismatch.selector);
         airdrop.claim(alice, proofs);
     }
 
@@ -337,7 +338,7 @@ contract BringIDGatedTest is Test {
         _registerCredential(CREDENTIAL_GROUP_ID, keccak256("cred-1"), appId, commitment);
 
         address alice = makeAddr("alice");
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), 0)));
         uint256 message = uint256(keccak256(abi.encodePacked(alice)));
 
         CredentialProof[] memory proofs = new CredentialProof[](1);
@@ -356,7 +357,7 @@ contract BringIDGatedTest is Test {
 
         // Scope is bound to airdrop contract address (msg.sender inside registry call)
         uint256 context = 42;
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), context)));
 
         CredentialProof memory proof = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey, scope, commitment);
 
@@ -380,7 +381,7 @@ contract BringIDGatedTest is Test {
         _registerCredential(credentialGroupId2, keccak256("id-2"), appId, commitment2);
 
         uint256 context = 42;
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), context)));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);
@@ -410,7 +411,7 @@ contract BringIDGatedTest is Test {
         _registerCredential(credentialGroupId2, keccak256("id-2"), appId, commitment2);
 
         uint256 context = 42;
-        uint256 scope = uint256(keccak256(abi.encode(address(airdrop), context)));
+        uint256 scope = uint256(keccak256(abi.encode(appId, address(airdrop), context)));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(CREDENTIAL_GROUP_ID, appId, commitmentKey1, scope, commitment1);

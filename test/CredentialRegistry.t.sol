@@ -55,23 +55,25 @@ contract InvalidScorer {
 contract ReentrantAttacker {
     CredentialRegistry public registry;
     CredentialProof public storedProof;
+    uint256 public storedAppId;
 
     constructor(CredentialRegistry registry_) {
         registry = registry_;
     }
 
-    function setProof(CredentialProof memory proof_) external {
+    function setProof(uint256 appId_, CredentialProof memory proof_) external {
+        storedAppId = appId_;
         storedProof = proof_;
     }
 
     function attack() external {
-        registry.submitProof(0, storedProof);
+        registry.submitProof(storedAppId, 0, storedProof);
     }
 
     function attackDuringSubmitProofs() external {
         CredentialProof[] memory proofs = new CredentialProof[](1);
         proofs[0] = storedProof;
-        registry.submitProofs(0, proofs);
+        registry.submitProofs(storedAppId, 0, proofs);
     }
 }
 
@@ -839,7 +841,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof memory proof = _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
@@ -847,7 +849,7 @@ contract CredentialRegistryTest is Test {
         emit ProofValidated(credentialGroupId, DEFAULT_APP_ID, proof.semaphoreProof.nullifier);
 
         vm.prank(prover);
-        registry.submitProof(0, proof);
+        registry.submitProof(DEFAULT_APP_ID, 0, proof);
     }
 
     function testValidateProofInactiveVerification() public {
@@ -867,7 +869,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(CredentialGroupInactive.selector);
-        registry.submitProof(0, proof);
+        registry.submitProof(DEFAULT_APP_ID, 0, proof);
     }
 
     function testValidateProofAppNotActive() public {
@@ -890,7 +892,30 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(AppNotActive.selector);
-        registry.submitProof(0, proof);
+        registry.submitProof(inactiveAppId, 0, proof);
+    }
+
+    function testValidateProofAppIdMismatch() public {
+        uint256 credentialGroupId = 1;
+        registry.createCredentialGroup(credentialGroupId, 0, 0);
+
+        CredentialProof memory proof = CredentialProof({
+            credentialGroupId: credentialGroupId,
+            appId: DEFAULT_APP_ID,
+            semaphoreProof: ISemaphore.SemaphoreProof({
+                merkleTreeDepth: 0,
+                merkleTreeRoot: 0,
+                nullifier: 0,
+                message: 0,
+                scope: 0,
+                points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+            })
+        });
+
+        // Pass a different appId_ than proof.appId — registry should reject
+        uint256 differentAppId = 999;
+        vm.expectRevert(AppIdMismatch.selector);
+        registry.submitProof(differentAppId, 0, proof);
     }
 
     function testValidateProofWrongScope() public {
@@ -902,14 +927,14 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
-        uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
+        uint256 wrongScope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, makeAddr("wrong"), uint256(0))));
 
         CredentialProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
 
         vm.expectRevert(ScopeMismatch.selector);
         vm.prank(prover);
-        registry.submitProof(0, proof);
+        registry.submitProof(DEFAULT_APP_ID, 0, proof);
     }
 
     function testValidateProofNoSemaphoreGroup() public {
@@ -919,7 +944,7 @@ contract CredentialRegistryTest is Test {
         // Don't register any credential — no Semaphore group exists
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof memory proof = CredentialProof({
             credentialGroupId: credentialGroupId,
@@ -936,7 +961,7 @@ contract CredentialRegistryTest is Test {
 
         vm.expectRevert(NoSemaphoreGroup.selector);
         vm.prank(prover);
-        registry.submitProof(0, proof);
+        registry.submitProof(DEFAULT_APP_ID, 0, proof);
     }
 
     // --- Score tests ---
@@ -960,13 +985,13 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
 
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, address(this), 0)));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
-        uint256 totalScore = registry.submitProofs(0, proofs);
+        uint256 totalScore = registry.submitProofs(DEFAULT_APP_ID, 0, proofs);
         assertEq(totalScore, score1 + score2);
     }
 
@@ -997,13 +1022,13 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
         _registerCredential(credentialGroupId2, keccak256("blinded-id-2"), DEFAULT_APP_ID, commitment2);
 
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, address(this), 0)));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
-        uint256 totalScore = registry.submitProofs(0, proofs);
+        uint256 totalScore = registry.submitProofs(DEFAULT_APP_ID, 0, proofs);
         assertEq(totalScore, 999 + 1);
     }
 
@@ -1019,7 +1044,7 @@ contract CredentialRegistryTest is Test {
         uint256 commitment1 = COMMITMENT_12345;
         _registerCredential(credentialGroupId1, keccak256("blinded-id-1"), DEFAULT_APP_ID, commitment1);
 
-        uint256 scope = uint256(keccak256(abi.encode(address(this), 0)));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, address(this), 0)));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
@@ -1037,7 +1062,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(CredentialGroupInactive.selector);
-        registry.submitProofs(0, proofs);
+        registry.submitProofs(DEFAULT_APP_ID, 0, proofs);
     }
 
     // --- Recovery timelock tests ---
@@ -2369,12 +2394,12 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId, keccak256("blinded-id"), DEFAULT_APP_ID, commitment);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof memory proof = _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
         vm.prank(prover);
-        bool result = registry.verifyProof(0, proof);
+        bool result = registry.verifyProof(DEFAULT_APP_ID, 0, proof);
         assertTrue(result);
     }
 
@@ -2383,7 +2408,7 @@ contract CredentialRegistryTest is Test {
         // Don't create the credential group — it stays inactive
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof memory proof = CredentialProof({
             credentialGroupId: credentialGroupId,
@@ -2399,7 +2424,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.prank(prover);
-        bool result = registry.verifyProof(0, proof);
+        bool result = registry.verifyProof(DEFAULT_APP_ID, 0, proof);
         assertFalse(result);
     }
 
@@ -2410,7 +2435,7 @@ contract CredentialRegistryTest is Test {
         uint256 inactiveAppId = 999;
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(inactiveAppId, prover, uint256(0))));
 
         CredentialProof memory proof = CredentialProof({
             credentialGroupId: credentialGroupId,
@@ -2426,7 +2451,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.prank(prover);
-        bool result = registry.verifyProof(0, proof);
+        bool result = registry.verifyProof(inactiveAppId, 0, proof);
         assertFalse(result);
     }
 
@@ -2440,13 +2465,13 @@ contract CredentialRegistryTest is Test {
 
         address prover = makeAddr("prover");
         // Generate proof with wrong scope (different address)
-        uint256 wrongScope = uint256(keccak256(abi.encode(makeAddr("wrong"), uint256(0))));
+        uint256 wrongScope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, makeAddr("wrong"), uint256(0))));
 
         CredentialProof memory proof =
             _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, wrongScope, commitment);
 
         vm.prank(prover);
-        bool result = registry.verifyProof(0, proof);
+        bool result = registry.verifyProof(DEFAULT_APP_ID, 0, proof);
         assertFalse(result);
     }
 
@@ -2456,7 +2481,7 @@ contract CredentialRegistryTest is Test {
         // Don't register any credential — no Semaphore group exists
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof memory proof = CredentialProof({
             credentialGroupId: credentialGroupId,
@@ -2472,7 +2497,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.prank(prover);
-        bool result = registry.verifyProof(0, proof);
+        bool result = registry.verifyProof(DEFAULT_APP_ID, 0, proof);
         assertFalse(result);
     }
 
@@ -2491,14 +2516,14 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
         vm.prank(prover);
-        bool result = registry.verifyProofs(0, proofs);
+        bool result = registry.verifyProofs(DEFAULT_APP_ID, 0, proofs);
         assertTrue(result);
     }
 
@@ -2514,7 +2539,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
@@ -2532,7 +2557,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.prank(prover);
-        bool result = registry.verifyProofs(0, proofs);
+        bool result = registry.verifyProofs(DEFAULT_APP_ID, 0, proofs);
         assertFalse(result);
     }
 
@@ -2556,14 +2581,14 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId2, keccak256("id-2"), DEFAULT_APP_ID, commitment2);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
         proofs[1] = _makeProof(credentialGroupId2, DEFAULT_APP_ID, commitmentKey2, scope, commitment2);
 
         vm.prank(prover);
-        uint256 totalScore = registry.getScore(0, proofs);
+        uint256 totalScore = registry.getScore(DEFAULT_APP_ID, 0, proofs);
         assertEq(totalScore, score1 + score2);
     }
 
@@ -2580,7 +2605,7 @@ contract CredentialRegistryTest is Test {
         _registerCredential(credentialGroupId1, keccak256("id-1"), DEFAULT_APP_ID, commitment1);
 
         address prover = makeAddr("prover");
-        uint256 scope = uint256(keccak256(abi.encode(prover, uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, prover, uint256(0))));
 
         CredentialProof[] memory proofs = new CredentialProof[](2);
         proofs[0] = _makeProof(credentialGroupId1, DEFAULT_APP_ID, commitmentKey1, scope, commitment1);
@@ -2599,7 +2624,7 @@ contract CredentialRegistryTest is Test {
 
         vm.prank(prover);
         vm.expectRevert(InvalidProof.selector);
-        registry.getScore(0, proofs);
+        registry.getScore(DEFAULT_APP_ID, 0, proofs);
     }
 
     // --- Reentrancy test ---
@@ -2614,11 +2639,11 @@ contract CredentialRegistryTest is Test {
 
         // Create attacker contract and set up proof with attacker as the scope origin
         ReentrantAttacker attacker = new ReentrantAttacker(registry);
-        uint256 scope = uint256(keccak256(abi.encode(address(attacker), uint256(0))));
+        uint256 scope = uint256(keccak256(abi.encode(DEFAULT_APP_ID, address(attacker), uint256(0))));
 
         CredentialProof memory proof = _makeProof(credentialGroupId, DEFAULT_APP_ID, commitmentKey, scope, commitment);
 
-        attacker.setProof(proof);
+        attacker.setProof(DEFAULT_APP_ID, proof);
 
         // First submitProof succeeds (consumes nullifier), then re-calling submitProofs
         // from a different entry point should be blocked by nonReentrant.
@@ -2946,7 +2971,7 @@ contract CredentialRegistryTest is Test {
         proof.appId = DEFAULT_APP_ID;
 
         vm.expectRevert("Pausable: paused");
-        registry.submitProof(0, proof);
+        registry.submitProof(DEFAULT_APP_ID, 0, proof);
     }
 
     function testPauseBlocksSubmitProofs() public {
@@ -2960,7 +2985,7 @@ contract CredentialRegistryTest is Test {
         proofs[0].appId = DEFAULT_APP_ID;
 
         vm.expectRevert("Pausable: paused");
-        registry.submitProofs(0, proofs);
+        registry.submitProofs(DEFAULT_APP_ID, 0, proofs);
     }
 
     function testPauseBlocksRegisterApp() public {
@@ -3049,7 +3074,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(DuplicateCredentialGroup.selector);
-        registry.submitProofs(0, proofs);
+        registry.submitProofs(DEFAULT_APP_ID, 0, proofs);
     }
 
     function testGetScoreRevertsDuplicateCredentialGroupId() public {
@@ -3080,7 +3105,7 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(DuplicateCredentialGroup.selector);
-        registry.getScore(0, proofs);
+        registry.getScore(DEFAULT_APP_ID, 0, proofs);
     }
 
     // --- verifyProofs duplicate check ---
@@ -3113,6 +3138,6 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(DuplicateCredentialGroup.selector);
-        registry.verifyProofs(0, proofs);
+        registry.verifyProofs(DEFAULT_APP_ID, 0, proofs);
     }
 }

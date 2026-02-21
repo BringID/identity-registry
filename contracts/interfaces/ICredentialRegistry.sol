@@ -162,37 +162,51 @@ interface ICredentialRegistry {
     /// @dev WARNING: The `message` field of the Semaphore proof is NOT validated. Smart contract
     ///      callers are vulnerable to mempool front-running unless they validate `message` binding
     ///      themselves. See `BringIDGated` for a ready-made helper.
-    /// @param context_ Application-defined context value combined with msg.sender to form the scope.
+    /// @param appId_ The app ID that the proof must target. Included in the scope:
+    ///        `scope = keccak256(appId_, msg.sender, context_)`.
+    /// @param context_ Application-defined context value combined with appId_ and msg.sender to form the scope.
     /// @param proof The credential group proof to validate.
     /// @return The credential group's score from the app's scorer.
-    function submitProof(uint256 context_, CredentialProof calldata proof) external returns (uint256);
+    function submitProof(uint256 appId_, uint256 context_, CredentialProof calldata proof) external returns (uint256);
 
     /// @notice Submits multiple ZK proofs, consuming nullifiers, and returns the aggregate score.
     /// @dev WARNING: The `message` field of each Semaphore proof is NOT validated. Smart contract
     ///      callers are vulnerable to mempool front-running unless they validate `message` binding
     ///      themselves. See `BringIDGated` for a ready-made helper.
-    /// @param context_ Application-defined context value combined with msg.sender to form the scope.
+    /// @param appId_ The app ID that all proofs must target (see submitProof).
+    /// @param context_ Application-defined context value combined with appId_ and msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to validate.
     /// @return The total score across all validated credential groups.
-    function submitProofs(uint256 context_, CredentialProof[] calldata proofs) external returns (uint256);
+    function submitProofs(uint256 appId_, uint256 context_, CredentialProof[] calldata proofs)
+        external
+        returns (uint256);
 
     /// @notice Verifies a single ZK proof without consuming the nullifier (view-only).
-    /// @param context_ Application-defined context value combined with msg.sender to form the scope.
+    /// @param appId_ The app ID that the proof must target (see submitProof).
+    /// @param context_ Application-defined context value combined with appId_ and msg.sender to form the scope.
     /// @param proof The credential group proof to verify.
     /// @return True if the proof is valid.
-    function verifyProof(uint256 context_, CredentialProof calldata proof) external view returns (bool);
+    function verifyProof(uint256 appId_, uint256 context_, CredentialProof calldata proof) external view returns (bool);
 
     /// @notice Verifies multiple ZK proofs without consuming nullifiers (view-only).
-    /// @param context_ Application-defined context value combined with msg.sender to form the scope.
+    /// @param appId_ The app ID that all proofs must target (see submitProof).
+    /// @param context_ Application-defined context value combined with appId_ and msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
-    function verifyProofs(uint256 context_, CredentialProof[] calldata proofs) external view returns (bool);
+    function verifyProofs(uint256 appId_, uint256 context_, CredentialProof[] calldata proofs)
+        external
+        view
+        returns (bool);
 
     /// @notice Verifies multiple proofs and returns the aggregate score (view-only).
-    /// @param context_ Application-defined context value combined with msg.sender to form the scope.
+    /// @param appId_ The app ID that all proofs must target (see submitProof).
+    /// @param context_ Application-defined context value combined with appId_ and msg.sender to form the scope.
     /// @param proofs Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
-    function getScore(uint256 context_, CredentialProof[] calldata proofs) external view returns (uint256);
+    function getScore(uint256 appId_, uint256 context_, CredentialProof[] calldata proofs)
+        external
+        view
+        returns (uint256);
 
     // ── Credential expiry ───────────────────────
 

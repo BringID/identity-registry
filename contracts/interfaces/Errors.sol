@@ -53,6 +53,7 @@ error RecoveryTimelockNotExpired();
 //  Proof verification
 // ──────────────────────────────────────────────
 
+error AppIdMismatch();
 error ScopeMismatch();
 error NoSemaphoreGroup();
 error InvalidProof();
