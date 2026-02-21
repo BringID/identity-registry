@@ -39,13 +39,17 @@ contract DefaultScorer is IScorer, Ownable2Step {
     /// @param scores_ The score values (must match length of credentialGroupIds_).
     function setScores(uint256[] calldata credentialGroupIds_, uint256[] calldata scores_) external onlyOwner {
         if (credentialGroupIds_.length != scores_.length) revert LengthMismatch();
-        for (uint256 i; i < credentialGroupIds_.length; ++i) {
+        uint256 len = credentialGroupIds_.length;
+        for (uint256 i; i < len;) {
             if (!_isTracked[credentialGroupIds_[i]]) {
                 _scoredGroupIds.push(credentialGroupIds_[i]);
                 _isTracked[credentialGroupIds_[i]] = true;
             }
             scores[credentialGroupIds_[i]] = scores_[i];
             emit ScoreSet(credentialGroupIds_[i], scores_[i]);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -59,9 +63,13 @@ contract DefaultScorer is IScorer, Ownable2Step {
     /// @param credentialGroupIds_ The credential group IDs.
     /// @return scores_ The score values.
     function getScores(uint256[] calldata credentialGroupIds_) external view returns (uint256[] memory scores_) {
-        scores_ = new uint256[](credentialGroupIds_.length);
-        for (uint256 i; i < credentialGroupIds_.length; ++i) {
+        uint256 len = credentialGroupIds_.length;
+        scores_ = new uint256[](len);
+        for (uint256 i; i < len;) {
             scores_[i] = scores[credentialGroupIds_[i]];
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -72,8 +80,11 @@ contract DefaultScorer is IScorer, Ownable2Step {
         credentialGroupIds_ = _scoredGroupIds;
         uint256 len = _scoredGroupIds.length;
         scores_ = new uint256[](len);
-        for (uint256 i; i < len; ++i) {
+        for (uint256 i; i < len;) {
             scores_[i] = scores[_scoredGroupIds[i]];
+            unchecked {
+                ++i;
+            }
         }
     }
 }

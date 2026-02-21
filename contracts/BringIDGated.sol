@@ -97,9 +97,12 @@ abstract contract BringIDGated is IBringIDGated {
         internal
         returns (uint256 bringIDScore)
     {
-        for (uint256 i = 0; i < proofs_.length; i++) {
+        for (uint256 i = 0; i < proofs_.length;) {
             if (proofs_[i].appId != APP_ID) {
                 revert AppIdMismatch(APP_ID, proofs_[i].appId);
+            }
+            unchecked {
+                ++i;
             }
         }
 
@@ -129,9 +132,12 @@ abstract contract BringIDGated is IBringIDGated {
     function validateProofsRecipient(CredentialProof[] calldata proofs_, address recipient_) public pure {
         if (recipient_ == address(0)) revert ZeroRecipient();
         uint256 expected = expectedMessage(recipient_);
-        for (uint256 i = 0; i < proofs_.length; i++) {
+        for (uint256 i = 0; i < proofs_.length;) {
             if (proofs_[i].semaphoreProof.message != expected) {
                 revert WrongProofRecipient(expected, proofs_[i].semaphoreProof.message);
+            }
+            unchecked {
+                ++i;
             }
         }
     }
