@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ScorerFactory} from "@bringid/contracts/scoring/ScorerFactory.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
 import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 contract ScorerFactoryTest is Test {
     ScorerFactory factory;
@@ -74,5 +75,13 @@ contract ScorerFactoryTest is Test {
         DefaultScorer(scorer1).setScore(1, 10);
         assertEq(IScorer(scorer1).getScore(1), 10);
         assertEq(IScorer(scorer2).getScore(1), 0);
+    }
+
+    /// @notice Verify factory-deployed scorers support IScorer via ERC165.
+    function testScorerFactoryCreateSupportsInterface() public {
+        address scorer = factory.create();
+        assertTrue(IERC165(scorer).supportsInterface(type(IScorer).interfaceId));
+        assertTrue(IERC165(scorer).supportsInterface(type(IERC165).interfaceId));
+        assertFalse(IERC165(scorer).supportsInterface(0xdeadbeef));
     }
 }

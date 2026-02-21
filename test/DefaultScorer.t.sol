@@ -3,6 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Test} from "forge-std/Test.sol";
 import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
+import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 contract DefaultScorerTest is Test {
     DefaultScorer scorer;
@@ -138,5 +140,19 @@ contract DefaultScorerTest is Test {
         assertEq(groupIds.length, 1);
         assertEq(groupIds[0], 1);
         assertEq(groupScores[0], 20);
+    }
+
+    // --- supportsInterface tests ---
+
+    function testDefaultScorerSupportsIScorer() public view {
+        assertTrue(scorer.supportsInterface(type(IScorer).interfaceId));
+    }
+
+    function testDefaultScorerSupportsIERC165() public view {
+        assertTrue(scorer.supportsInterface(type(IERC165).interfaceId));
+    }
+
+    function testDefaultScorerDoesNotSupportUnknownInterface() public view {
+        assertFalse(scorer.supportsInterface(0xdeadbeef));
     }
 }
