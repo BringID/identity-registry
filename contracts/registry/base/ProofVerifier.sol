@@ -10,6 +10,8 @@ import {RegistryStorage} from "./RegistryStorage.sol";
 /// @title ProofVerifier
 /// @notice Handles Semaphore proof submission, verification, and score aggregation.
 abstract contract ProofVerifier is RegistryStorage {
+    uint256 internal constant MAX_PROOFS = 20;
+
     // ──────────────────────────────────────────────
     //  Proof validation
     // ──────────────────────────────────────────────
@@ -68,8 +70,11 @@ abstract contract ProofVerifier is RegistryStorage {
     {
         _checkNoDuplicateGroups(proofs_);
         _score = 0;
-        for (uint256 i = 0; i < proofs_.length; i++) {
+        for (uint256 i = 0; i < proofs_.length;) {
             _score += _submitProof(context_, proofs_[i]);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -113,8 +118,11 @@ abstract contract ProofVerifier is RegistryStorage {
     /// @return True if all proofs are valid.
     function verifyProofs(uint256 context_, CredentialProof[] calldata proofs_) public view returns (bool) {
         _checkNoDuplicateGroups(proofs_);
-        for (uint256 i = 0; i < proofs_.length; i++) {
+        for (uint256 i = 0; i < proofs_.length;) {
             if (!_verifyProof(msg.sender, context_, proofs_[i])) return false;
+            unchecked {
+                ++i;
+            }
         }
         return true;
     }
@@ -128,10 +136,13 @@ abstract contract ProofVerifier is RegistryStorage {
         _checkNoDuplicateGroups(proofs_);
         _score = 0;
         CredentialProof memory _proof;
-        for (uint256 i = 0; i < proofs_.length; i++) {
+        for (uint256 i = 0; i < proofs_.length;) {
             _proof = proofs_[i];
             if (!_verifyProof(msg.sender, context_, _proof)) revert InvalidProof();
             _score += IScorer(apps[_proof.appId].scorer).getScore(_proof.credentialGroupId);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -155,11 +166,18 @@ abstract contract ProofVerifier is RegistryStorage {
 
     /// @dev Reverts if any two proofs share the same credentialGroupId, preventing score inflation.
     function _checkNoDuplicateGroups(CredentialProof[] calldata proofs_) internal pure {
-        for (uint256 i = 1; i < proofs_.length; i++) {
-            for (uint256 j = 0; j < i; j++) {
+        if (proofs_.length > MAX_PROOFS) revert TooManyProofs();
+        for (uint256 i = 1; i < proofs_.length;) {
+            for (uint256 j = 0; j < i;) {
                 if (proofs_[i].credentialGroupId == proofs_[j].credentialGroupId) {
                     revert DuplicateCredentialGroup();
                 }
+                unchecked {
+                    ++j;
+                }
+            }
+            unchecked {
+                ++i;
             }
         }
     }

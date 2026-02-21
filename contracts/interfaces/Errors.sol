@@ -57,6 +57,7 @@ error ScopeMismatch();
 error NoSemaphoreGroup();
 error InvalidProof();
 error DuplicateCredentialGroup();
+error TooManyProofs();
 
 // ──────────────────────────────────────────────
 //  Registry admin
