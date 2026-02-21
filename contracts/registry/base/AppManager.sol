@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import "@bringid/contracts/interfaces/Errors.sol";
 import "@bringid/contracts/interfaces/Events.sol";
+import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
 /// @title AppManager
@@ -81,6 +82,8 @@ abstract contract AppManager is RegistryStorage {
     function setAppScorer(uint256 appId_, address scorer_) public {
         if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
         if (scorer_ == address(0)) revert InvalidScorerAddress();
+        // Verify the scorer contract implements getScore
+        IScorer(scorer_).getScore(0);
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
@@ -97,8 +100,12 @@ abstract contract AppManager is RegistryStorage {
 
         uint256 effectiveDuration = merkleTreeDuration_ > 0 ? merkleTreeDuration_ : defaultMerkleTreeDuration;
         uint256[] storage groupIds = _appSemaphoreGroupIds[appId_];
-        for (uint256 i = 0; i < groupIds.length; i++) {
+        uint256 len = groupIds.length;
+        for (uint256 i = 0; i < len;) {
             SEMAPHORE.updateGroupMerkleTreeDuration(groupIds[i], effectiveDuration);
+            unchecked {
+                ++i;
+            }
         }
 
         emit AppMerkleTreeDurationSet(appId_, merkleTreeDuration_);
