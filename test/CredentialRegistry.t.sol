@@ -547,7 +547,7 @@ contract CredentialRegistryTest is Test {
     function testSetAppScorerRejectsNonContract() public {
         address eoa = makeAddr("eoa");
 
-        vm.expectRevert();
+        vm.expectRevert(InvalidScorerContract.selector);
         registry.setAppScorer(DEFAULT_APP_ID, eoa);
     }
 
@@ -555,7 +555,7 @@ contract CredentialRegistryTest is Test {
         // Deploy a contract that doesn't implement getScore
         InvalidScorer invalid = new InvalidScorer();
 
-        vm.expectRevert();
+        vm.expectRevert(InvalidScorerContract.selector);
         registry.setAppScorer(DEFAULT_APP_ID, address(invalid));
     }
 

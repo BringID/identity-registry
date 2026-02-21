@@ -82,8 +82,12 @@ abstract contract AppManager is RegistryStorage {
     function setAppScorer(uint256 appId_, address scorer_) public {
         if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
         if (scorer_ == address(0)) revert InvalidScorerAddress();
-        // Verify the scorer contract implements getScore
-        IScorer(scorer_).getScore(0);
+        // Verify the scorer is a contract that implements getScore
+        if (scorer_.code.length == 0) revert InvalidScorerContract();
+        try IScorer(scorer_).getScore(0) {}
+        catch {
+            revert InvalidScorerContract();
+        }
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
