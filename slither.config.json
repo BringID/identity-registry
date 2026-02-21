@@ -1,0 +1,6 @@
+{
+  "filter_paths": "test/|script/|out/|lib/|node_modules/",
+  "exclude_dependencies": true,
+  "detectors_to_exclude": "naming-convention,assembly,timestamp,dead-code",
+  "fail_on": "medium"
+}

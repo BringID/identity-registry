@@ -108,6 +108,10 @@ interface ICredentialRegistry {
     /// @notice Returns all registered credential group IDs.
     /// @return Array of credential group IDs.
     function getCredentialGroupIds() external view returns (uint256[] memory);
+
+    /// @notice Returns all Semaphore group IDs created for an app.
+    /// @param appId_ The app ID to query.
+    /// @return Array of Semaphore group IDs associated with the app.
     function getAppSemaphoreGroupIds(uint256 appId_) external view returns (uint256[] memory);
 
     /// @notice Verifies an attestation's validity and recovers the signer.
@@ -273,6 +277,9 @@ interface ICredentialRegistry {
     /// @notice Removes a trusted attestation verifier.
     /// @param verifier_ The verifier address to remove.
     function removeTrustedVerifier(address verifier_) external;
+
+    /// @notice Updates the registry-level default Merkle tree duration for new Semaphore groups.
+    /// @param duration_ New default Merkle tree duration in seconds.
     function setDefaultMerkleTreeDuration(uint256 duration_) external;
 
     // ── App management ──────────────────────────
@@ -312,5 +319,9 @@ interface ICredentialRegistry {
     /// @param appId_ The app ID.
     /// @param scorer_ The scorer contract address.
     function setAppScorer(uint256 appId_, address scorer_) external;
+
+    /// @notice Sets a per-app Merkle tree duration override and propagates to all existing groups.
+    /// @param appId_ The app ID to configure.
+    /// @param merkleTreeDuration_ The Merkle tree duration in seconds.
     function setAppMerkleTreeDuration(uint256 appId_, uint256 merkleTreeDuration_) external;
 }

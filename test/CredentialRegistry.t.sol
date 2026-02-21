@@ -39,6 +39,13 @@ contract MockScorer is IScorer {
     }
 }
 
+/// @dev Contract that does NOT implement IScorer — used to test setAppScorer validation.
+contract InvalidScorer {
+    function notGetScore() external pure returns (uint256) {
+        return 0;
+    }
+}
+
 contract ReentrantAttacker {
     CredentialRegistry public registry;
     CredentialProof public storedProof;
@@ -127,7 +134,7 @@ contract CredentialRegistryTest is Test {
     event CredentialGroupStatusChanged(
         uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status
     );
-    event DefaultMerkleTreeDurationSet(uint256 duration);
+    event DefaultMerkleTreeDurationSet(uint256 indexed duration);
     event AppMerkleTreeDurationSet(uint256 indexed appId, uint256 merkleTreeDuration);
 
     function setUp() public {
@@ -535,6 +542,21 @@ contract CredentialRegistryTest is Test {
         vm.prank(notAdmin);
         vm.expectRevert(NotAppAdmin.selector);
         registry.setAppScorer(DEFAULT_APP_ID, address(0x123));
+    }
+
+    function testSetAppScorerRejectsNonContract() public {
+        address eoa = makeAddr("eoa");
+
+        vm.expectRevert();
+        registry.setAppScorer(DEFAULT_APP_ID, eoa);
+    }
+
+    function testSetAppScorerRejectsInvalidContract() public {
+        // Deploy a contract that doesn't implement getScore
+        InvalidScorer invalid = new InvalidScorer();
+
+        vm.expectRevert();
+        registry.setAppScorer(DEFAULT_APP_ID, address(invalid));
     }
 
     // --- Chain-bound attestation tests ---
@@ -2963,6 +2985,13 @@ contract CredentialRegistryTest is Test {
         registry.submitProofs(0, proofs);
     }
 
+    function testPauseBlocksRegisterApp() public {
+        registry.pause();
+
+        vm.expectRevert("Pausable: paused");
+        registry.registerApp(0);
+    }
+
     function testPauseDoesNotBlockViewFunctions() public {
         uint256 credentialGroupId = 1;
         registry.createCredentialGroup(credentialGroupId, 0, 0);
@@ -3106,6 +3135,71 @@ contract CredentialRegistryTest is Test {
         });
 
         vm.expectRevert(DuplicateCredentialGroup.selector);
+        registry.verifyProofs(0, proofs);
+    }
+
+    // --- Too many proofs guard ---
+
+    function testSubmitProofsRevertsTooManyProofs() public {
+        CredentialProof[] memory proofs = new CredentialProof[](21);
+        for (uint256 i = 0; i < 21; i++) {
+            proofs[i] = CredentialProof({
+                credentialGroupId: i + 1,
+                appId: DEFAULT_APP_ID,
+                semaphoreProof: ISemaphore.SemaphoreProof({
+                    merkleTreeDepth: 0,
+                    merkleTreeRoot: 0,
+                    nullifier: 0,
+                    message: 0,
+                    scope: 0,
+                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+                })
+            });
+        }
+
+        vm.expectRevert(TooManyProofs.selector);
+        registry.submitProofs(0, proofs);
+    }
+
+    function testGetScoreRevertsTooManyProofs() public {
+        CredentialProof[] memory proofs = new CredentialProof[](21);
+        for (uint256 i = 0; i < 21; i++) {
+            proofs[i] = CredentialProof({
+                credentialGroupId: i + 1,
+                appId: DEFAULT_APP_ID,
+                semaphoreProof: ISemaphore.SemaphoreProof({
+                    merkleTreeDepth: 0,
+                    merkleTreeRoot: 0,
+                    nullifier: 0,
+                    message: 0,
+                    scope: 0,
+                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+                })
+            });
+        }
+
+        vm.expectRevert(TooManyProofs.selector);
+        registry.getScore(0, proofs);
+    }
+
+    function testVerifyProofsRevertsTooManyProofs() public {
+        CredentialProof[] memory proofs = new CredentialProof[](21);
+        for (uint256 i = 0; i < 21; i++) {
+            proofs[i] = CredentialProof({
+                credentialGroupId: i + 1,
+                appId: DEFAULT_APP_ID,
+                semaphoreProof: ISemaphore.SemaphoreProof({
+                    merkleTreeDepth: 0,
+                    merkleTreeRoot: 0,
+                    nullifier: 0,
+                    message: 0,
+                    scope: 0,
+                    points: [uint256(0), 0, 0, 0, 0, 0, 0, 0]
+                })
+            });
+        }
+
+        vm.expectRevert(TooManyProofs.selector);
         registry.verifyProofs(0, proofs);
     }
 }

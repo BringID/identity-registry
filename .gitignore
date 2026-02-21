@@ -10,3 +10,6 @@ broadcast/
 
 # IDE project files
 .idea
+
+# Claude worktrees
+.claude/worktrees/

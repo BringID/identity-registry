@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import "@bringid/contracts/interfaces/Errors.sol";
 import "@bringid/contracts/interfaces/Events.sol";
+import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
 /// @title AppManager
@@ -13,11 +14,12 @@ abstract contract AppManager is RegistryStorage {
     // ──────────────────────────────────────────────
 
     /// @notice Registers a new app. Caller becomes the app admin.
-    /// @dev App IDs are derived from keccak256(chainId, sender, nonce) for unpredictability
-    ///      and natural chain-uniqueness. The app uses the defaultScorer by default.
+    /// @dev App IDs are derived from keccak256(chainId, sender, nonce) for collision resistance
+    ///      and natural chain-uniqueness. Note: all inputs are publicly readable, so app IDs
+    ///      are predictable but unique. The app uses the defaultScorer by default.
     /// @param recoveryTimelock_ The recovery timelock duration in seconds (0 to disable).
     /// @return appId_ The newly assigned app ID.
-    function registerApp(uint256 recoveryTimelock_) public returns (uint256 appId_) {
+    function registerApp(uint256 recoveryTimelock_) public whenNotPaused returns (uint256 appId_) {
         appId_ = uint256(keccak256(abi.encodePacked(block.chainid, msg.sender, nextAppId++)));
         apps[appId_] = App(AppStatus.ACTIVE, recoveryTimelock_, msg.sender, defaultScorer);
         emit AppRegistered(appId_, msg.sender, recoveryTimelock_);
@@ -80,6 +82,8 @@ abstract contract AppManager is RegistryStorage {
     function setAppScorer(uint256 appId_, address scorer_) public {
         if (apps[appId_].admin != msg.sender) revert NotAppAdmin();
         if (scorer_ == address(0)) revert InvalidScorerAddress();
+        // Verify the scorer contract implements getScore
+        IScorer(scorer_).getScore(0);
         apps[appId_].scorer = scorer_;
         emit AppScorerSet(appId_, scorer_);
     }
@@ -96,8 +100,12 @@ abstract contract AppManager is RegistryStorage {
 
         uint256 effectiveDuration = merkleTreeDuration_ > 0 ? merkleTreeDuration_ : defaultMerkleTreeDuration;
         uint256[] storage groupIds = _appSemaphoreGroupIds[appId_];
-        for (uint256 i = 0; i < groupIds.length; i++) {
+        uint256 len = groupIds.length;
+        for (uint256 i = 0; i < len;) {
             SEMAPHORE.updateGroupMerkleTreeDuration(groupIds[i], effectiveDuration);
+            unchecked {
+                ++i;
+            }
         }
 
         emit AppMerkleTreeDurationSet(appId_, merkleTreeDuration_);

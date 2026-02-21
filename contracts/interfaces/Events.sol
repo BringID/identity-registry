@@ -140,7 +140,14 @@ event AttestationValidityDurationSet(uint256 duration);
 /// @param credentialGroupId The credential group ID.
 /// @param status The new credential group status.
 event CredentialGroupStatusChanged(uint256 indexed credentialGroupId, ICredentialRegistry.CredentialGroupStatus status);
-event DefaultMerkleTreeDurationSet(uint256 duration);
+
+/// @notice Emitted when the registry-level default Merkle tree duration is updated.
+/// @param duration The new default duration in seconds.
+event DefaultMerkleTreeDurationSet(uint256 indexed duration);
+
+/// @notice Emitted when a per-app Merkle tree duration override is set.
+/// @param appId The app ID.
+/// @param merkleTreeDuration The new duration in seconds (0 = use registry default).
 event AppMerkleTreeDurationSet(uint256 indexed appId, uint256 merkleTreeDuration);
 
 /// @notice Emitted when the default scorer contract is updated by the owner.
