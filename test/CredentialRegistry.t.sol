@@ -2135,34 +2135,6 @@ contract CredentialRegistryTest is Test {
         _registerCredential(1, credentialId, app2, commitment2);
     }
 
-    function testSetCredentialGroupFamily() public {
-        registry.createCredentialGroup(1, 30 days, 0);
-
-        // Initially standalone
-        (,, uint256 familyId) = registry.credentialGroups(1);
-        assertEq(familyId, 0);
-
-        // Set family
-        registry.setCredentialGroupFamily(1, 5);
-
-        (,, uint256 newFamilyId) = registry.credentialGroups(1);
-        assertEq(newFamilyId, 5);
-    }
-
-    function testSetCredentialGroupFamilyOnlyOwner() public {
-        registry.createCredentialGroup(1, 30 days, 0);
-
-        address notOwner = makeAddr("not-owner");
-        vm.prank(notOwner);
-        vm.expectRevert("Ownable: caller is not the owner");
-        registry.setCredentialGroupFamily(1, 5);
-    }
-
-    function testSetCredentialGroupFamilyNonExistent() public {
-        vm.expectRevert(CredentialGroupNotFound.selector);
-        registry.setCredentialGroupFamily(999, 5);
-    }
-
     function testRemoveExpiredCredentialGroupMismatch() public {
         registry.createCredentialGroup(1, 30 days, 1);
         registry.createCredentialGroup(2, 60 days, 1);

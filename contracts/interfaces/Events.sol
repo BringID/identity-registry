@@ -127,11 +127,6 @@ event CredentialExpired(
 /// @param validityDuration The new validity duration in seconds.
 event CredentialGroupValidityDurationSet(uint256 indexed credentialGroupId, uint256 validityDuration);
 
-/// @notice Emitted when a credential group's family ID is updated.
-/// @param credentialGroupId The credential group ID.
-/// @param familyId The new family ID.
-event CredentialGroupFamilySet(uint256 indexed credentialGroupId, uint256 familyId);
-
 /// @notice Emitted when the global attestation validity duration is updated.
 /// @param duration The new attestation validity duration in seconds.
 event AttestationValidityDurationSet(uint256 duration);

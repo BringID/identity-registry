@@ -253,11 +253,6 @@ interface ICredentialRegistry {
     /// @param validityDuration_ New validity duration in seconds (0 = no expiry).
     function setCredentialGroupValidityDuration(uint256 credentialGroupId_, uint256 validityDuration_) external;
 
-    /// @notice Updates the family ID for an existing credential group.
-    /// @param credentialGroupId_ The credential group ID to update.
-    /// @param familyId_ New family ID (0 = standalone, >0 = family grouping).
-    function setCredentialGroupFamily(uint256 credentialGroupId_, uint256 familyId_) external;
-
     /// @notice Updates the global attestation validity duration.
     /// @param duration_ New duration in seconds (must be > 0).
     function setAttestationValidityDuration(uint256 duration_) external;

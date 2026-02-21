@@ -62,18 +62,6 @@ abstract contract RegistryAdmin is RegistryStorage {
         emit CredentialGroupValidityDurationSet(credentialGroupId_, validityDuration_);
     }
 
-    /// @notice Updates the family ID for an existing credential group.
-    /// @dev Only affects future registrations; existing registrations keep their original hash.
-    /// @param credentialGroupId_ The credential group ID to update.
-    /// @param familyId_ New family ID (0 = standalone, >0 = family).
-    function setCredentialGroupFamily(uint256 credentialGroupId_, uint256 familyId_) public onlyOwner {
-        if (credentialGroups[credentialGroupId_].status == CredentialGroupStatus.UNDEFINED) {
-            revert CredentialGroupNotFound();
-        }
-        credentialGroups[credentialGroupId_].familyId = familyId_;
-        emit CredentialGroupFamilySet(credentialGroupId_, familyId_);
-    }
-
     /// @notice Updates the global attestation validity duration.
     /// @param duration_ New duration in seconds (must be > 0).
     function setAttestationValidityDuration(uint256 duration_) public onlyOwner {
