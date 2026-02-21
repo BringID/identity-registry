@@ -105,10 +105,12 @@ abstract contract RegistryStorage is ICredentialRegistry, Ownable2Step, Pausable
     /// @dev Unpacks a 65-byte ECDSA signature into its (v, r, s) components.
     function _unpackSignature(bytes memory signature_) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
         if (signature_.length != 65) revert InvalidAttestationSigLength();
+        // Memory layout of `bytes memory`: first 32 bytes = length, followed by data.
+        // Signature layout (65 bytes): r (bytes 0-31) || s (bytes 32-63) || v (byte 64)
         assembly {
-            r := mload(add(signature_, 0x20))
-            s := mload(add(signature_, 0x40))
-            v := byte(0, mload(add(signature_, 0x60)))
+            r := mload(add(signature_, 0x20)) // skip length prefix, read first 32 bytes
+            s := mload(add(signature_, 0x40)) // read next 32 bytes
+            v := byte(0, mload(add(signature_, 0x60))) // read first byte of last 32-byte word
         }
     }
 
