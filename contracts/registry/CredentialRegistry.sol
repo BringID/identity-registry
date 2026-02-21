@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "./Errors.sol";
-import "./Events.sol";
-import {DefaultScorer} from "../scoring/DefaultScorer.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
+import "@bringid/contracts/interfaces/Errors.sol";
+import "@bringid/contracts/interfaces/Events.sol";
+import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 import {AppManager} from "./base/AppManager.sol";
 import {CredentialManager} from "./base/CredentialManager.sol";
 import {ProofVerifier} from "./base/ProofVerifier.sol";
@@ -26,7 +26,7 @@ import {RegistryStorage} from "./base/RegistryStorage.sol";
 ///
 /// @dev WARNING: The `message` field of the Semaphore proof is NOT validated. Smart contract
 ///      callers are vulnerable to mempool front-running unless they validate `message` binding
-///      themselves. See `SafeProofConsumer` for a ready-made helper.
+///      themselves. See `BringIDGated` for a ready-made helper.
 contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier, RegistryAdmin, AppManager {
     /// @param semaphore_ Address of the deployed Semaphore contract.
     /// @param trustedVerifier_ Address of the initial trusted verifier to add.
@@ -42,5 +42,6 @@ contract CredentialRegistry is CredentialManager, RecoveryManager, ProofVerifier
 
         DefaultScorer _scorer = new DefaultScorer(msg.sender);
         defaultScorer = address(_scorer);
+        emit DefaultScorerUpdated(address(0), address(_scorer));
     }
 }

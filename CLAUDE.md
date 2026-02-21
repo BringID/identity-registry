@@ -17,8 +17,8 @@ Target chains: Base mainnet (chain ID 8453) and Base Sepolia (chain ID 84532). B
 ```bash
 make install              # Install dependencies (yarn)
 forge build               # Compile contracts
-forge fmt --check         # Check formatting (CI enforces this)
-forge fmt                 # Auto-format
+forge fmt --check contracts/ test/ script/   # Check formatting (CI enforces this)
+forge fmt contracts/ test/ script/            # Auto-format
 make test                 # Run tests (forge test --summary)
 make test-all             # Run all tests with --via-ir --ffi
 make test-registry        # CredentialRegistry tests only (requires --ffi)
@@ -95,13 +95,52 @@ identity = new Identity(seed)
 
 ## Architecture
 
-### Core contracts (`src/registry/`)
+### `@bringid/contracts` package (`contracts/`)
 
-- **CredentialRegistry.sol** — Main contract. Owner creates credential groups (metadata only — status). Per-app Semaphore groups are created lazily on first credential registration for each (credentialGroup, app) pair via `appSemaphoreGroups` mapping. Credential lifecycle has three distinct operations: `registerCredential()` for first-time registration with a verifier-signed attestation; `renewCredential()` for renewing previously-registered credentials (same identity commitment, resets validity duration); and `initiateRecovery()` / `executeRecovery()` for timelocked key replacement (changes identity commitment, does NOT update validity duration). Proof API has state-changing and view variants: `submitProof()` (returns the credential group score) / `submitProofs()` consume Semaphore nullifiers (binding proofs to the caller via `scope == keccak256(abi.encode(msg.sender, context))`); `verifyProof()` / `verifyProofs()` are view-only counterparts using Semaphore's `verifyProof()` that don't consume nullifiers; `getScore()` is a view that verifies proofs and returns the aggregate score. Since each app has its own Semaphore group, cross-app proof replay is naturally prevented. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Deploys a `DefaultScorer` in the constructor.
-- **ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt), `CredentialGroupProof` (credentialGroupId + appId + semaphoreProof).
-- **IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`, `getScores(uint256[] credentialGroupIds) → uint256[]`, `getAllScores() → (uint256[], uint256[])`.
+The `contracts/` directory contains all Solidity source code and is also the public API surface, published as the `@bringid/contracts` npm package. External developers import from here (e.g. `import "@bringid/contracts/interfaces/ICredentialRegistry.sol"`). Internal implementation lives in `contracts/registry/` (excluded from npm via `files` in `package.json`). All internal imports use `@bringid/contracts/...` paths (resolved by the `@bringid/contracts/=contracts/` remapping in `remappings.txt`).
+
+```
+contracts/
+├── package.json                 ← npm package manifest
+├── BringIDGated.sol             ← abstract base: message binding + proof validation + submission
+├── interfaces/
+│   ├── ICredentialRegistry.sol  ← full interface + all data types
+│   ├── IBringIDGated.sol        ← interface for BringIDGated consumers
+│   ├── IScorer.sol              ← scorer extension interface
+│   ├── Types.sol                ← shared data types (CredentialProof)
+│   ├── Errors.sol               ← custom error definitions
+│   └── Events.sol               ← event declarations
+├── scoring/
+│   ├── DefaultScorer.sol        ← reference IScorer implementation
+│   └── ScorerFactory.sol        ← factory for app admins
+├── examples/
+│   └── SimpleAirdrop.sol        ← reference consumer using BringIDGated
+└── registry/                    ← internal implementation (excluded from npm)
+    ├── CredentialRegistry.sol   ← main contract (thin facade)
+    └── base/
+        ├── RegistryStorage.sol
+        ├── AttestationVerifier.sol
+        ├── CredentialManager.sol
+        ├── RecoveryManager.sol
+        ├── ProofVerifier.sol
+        ├── RegistryAdmin.sol
+        └── AppManager.sol
+```
+
+- **interfaces/ICredentialRegistry.sol** — Full interface with all public functions and core data types: `CredentialGroup` (status + validityDuration + familyId), `App` (status + recoveryTimelock + admin + scorer), `RecoveryRequest` (credentialGroupId + appId + newCommitment + executeAfter), `CredentialRecord` (registered + expired + commitment + expiresAt + credentialGroupId + pendingRecovery), `Attestation` (registry + credentialGroupId + credentialId + appId + commitment + issuedAt).
+- **interfaces/Types.sol** — Shared data types used by both the registry and consumers. Contains `CredentialProof` (credentialGroupId + appId + semaphoreProof). Imported by `ICredentialRegistry.sol` and `BringIDGated.sol`.
+- **interfaces/IScorer.sol** — Interface for scorer contracts: `getScore(uint256 credentialGroupId) → uint256`, `getScores(uint256[] credentialGroupIds) → uint256[]`, `getAllScores() → (uint256[], uint256[])`.
+- **interfaces/IBringIDGated.sol** — Interface for `BringIDGated` consumers. Exposes `REGISTRY()`, `APP_ID()`, view functions `verifyProof()`, `verifyProofs()`, `getScore()`, and validation functions `validateProofRecipient()`, `validateProofsRecipient()`. Errors: `WrongProofRecipient`, `ZeroRecipient`, `AppIdMismatch`.
+- **interfaces/Errors.sol** — Custom error definitions (all errors use custom error types, not string reverts).
+- **interfaces/Events.sol** — Event declarations.
+- **BringIDGated.sol** — Abstract base implementing `IBringIDGated` for contracts that validate and submit BringID credential proofs. Constructor takes `address registry_` (cast internally to `ICredentialRegistry`) and `uint256 appId_` — consumers don't need to import `ICredentialRegistry`. Validates that the Semaphore proof `message` field is bound to an intended recipient address (preventing mempool front-running) via `validateProofRecipient()` and `validateProofsRecipient()`. Provides `_submitProofsForRecipient(recipient, proofs)` (2-param, context defaults to 0) and `_submitProofsForRecipient(recipient, context, proofs)` (3-param, explicit context) which handle app ID validation, message binding, and proof submission. Returns the aggregate `bringIDScore` without enforcing a threshold — consuming contracts handle their own scoring logic. For a non-zero fixed context, store your own immutable and call the 3-param overload. Also provides public view wrappers `verifyProof(context, proof)`, `verifyProofs(context, proofs)`, and `getScore(context, proofs)` that delegate to the registry with `msg.sender` = `address(this)`, enabling off-chain callers to pre-check proofs scoped to the consumer contract. Immutables: `REGISTRY`, `APP_ID`.
 - **DefaultScorer.sol** — Default scorer owned by BringID. Stores global scores per credential group via `setScore()` / `getScore()`. Deployed automatically by the CredentialRegistry constructor.
-- **Events.sol** — Event declarations.
+- **ScorerFactory.sol** — Deploys DefaultScorer instances owned by the caller.
+- **SimpleAirdrop.sol** — Example airdrop contract inheriting `BringIDGated`, demonstrating front-running-resistant proof consumption with the 2-param `_submitProofsForRecipient` (context=0), its own `MIN_SCORE` threshold, and `InsufficientScore` error. Constructor takes `address registry_` (passed through to `BringIDGated`).
+
+### Core implementation (`contracts/registry/`)
+
+- **CredentialRegistry.sol** — Main contract (thin facade). Owner creates credential groups (metadata only — status). Per-app Semaphore groups are created lazily on first credential registration for each (credentialGroup, app) pair via `appSemaphoreGroups` mapping. Credential lifecycle has three distinct operations: `registerCredential()` for first-time registration with a verifier-signed attestation; `renewCredential()` for renewing previously-registered credentials (same identity commitment, resets validity duration); and `initiateRecovery()` / `executeRecovery()` for timelocked key replacement (changes identity commitment, does NOT update validity duration). Proof API has state-changing and view variants: `submitProof()` (returns the credential group score) / `submitProofs()` consume Semaphore nullifiers (binding proofs to the caller via `scope == keccak256(abi.encode(msg.sender, context))`); `verifyProof()` / `verifyProofs()` are view-only counterparts using Semaphore's `verifyProof()` that don't consume nullifiers; `getScore()` is a view that verifies proofs and returns the aggregate score. All view functions use `msg.sender` for scope computation. For off-chain pre-checking of proofs destined for a `BringIDGated` consumer, call the consumer's `verifyProof()` / `verifyProofs()` / `getScore()` views (which delegate to the registry with the consumer as `msg.sender`). Since each app has its own Semaphore group, cross-app proof replay is naturally prevented. Supports multiple trusted verifiers (`trustedVerifiers` mapping) for different verification methods (TLSN, OAuth, zkPassport, etc.). Deploys a `DefaultScorer` in the constructor.
 
 ### Key design decisions
 
@@ -121,7 +160,7 @@ identity = new Identity(seed)
 - **Attestation expiry**: attestations include an `issuedAt` timestamp signed by the verifier. The contract enforces `block.timestamp <= issuedAt + attestationValidityDuration` (default 30 minutes). The owner can update the duration via `setAttestationValidityDuration()` (must be > 0).
 - **Key recovery and group changes**: per-app timelocked commitment replacement. When a user loses their wallet, they re-authenticate via any supported verification flow (zkTLS, OAuth, zkPassport, zkKYC, etc.); the verifier re-derives the same `credentialId` and signs an attestation with a new commitment and the same `appId`. `initiateRecovery()` removes the old commitment from the per-app Semaphore group immediately and queues the new one behind the app's `recoveryTimelock`. `executeRecovery()` adds the new commitment after the timelock expires and updates `cred.credentialGroupId`. `initiateRecovery()` also supports group changes within the same family (e.g. upgrading from Farcaster Low to High) — the attestation can target a different group as long as both groups share the same familyId. The timelock prevents double-spend by ensuring no valid commitment exists during the transition. App admin sets `recoveryTimelock` at `registerApp()` time (0 = disabled); can toggle on/off later via `setAppRecoveryTimelock()`. The `Attestation` struct includes `appId` for timelock lookup and per-app group resolution. `cred.commitment` tracks the current commitment per registration hash; `cred.pendingRecovery` tracks in-flight recovery requests.
 - **Recovery on expired+removed credentials**: `initiateRecovery()` works even after a credential has expired and been removed from the Semaphore group. It checks `cred.registered` (which stays true after expiry), so a user who lost their key after expiry can still recover. When `cred.expired` is true, `_executeInitiateRecovery()` skips the `SEMAPHORE.removeMember()` call. `executeRecovery()` clears `cred.expired` and adds the new commitment to the Semaphore group. **Recovery does NOT modify `cred.expiresAt`** — key replacement and credential validity are independent concerns.
-- **Error message convention**: all `require` error strings use a `BID::` prefix (e.g. `"BID::not registered"`, `"BID::app not active"`). This makes BringID errors instantly identifiable in transaction traces and logs. Keep messages short and lowercase after the prefix.
+- **Custom errors**: all revert conditions use custom error types defined in `contracts/interfaces/Errors.sol` (e.g. `NotRegistered()`, `AppNotActive()`). No string-based `require` messages.
 - **Expiry + recovery guard**: `removeExpiredCredential()` rejects calls when `cred.pendingRecovery.executeAfter != 0` (`"BID::recovery pending"`), preventing a double-remove from the Semaphore group after `initiateRecovery()` has already removed the commitment.
 
 ### Trust Model & Governance
@@ -184,22 +223,29 @@ PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 - **TestUtils.sol** — FFI library calling Node.js to generate Semaphore commitments and proofs.
 - **test/semaphore-js/** — Node.js helpers (`commitment.mjs`, `proof.mjs`) invoked via Foundry FFI.
 
-### Dependencies
+### Dependencies & Import Conventions
 
 Solidity libraries managed via git submodules (`lib/`) and npm (`node_modules/`):
 - `@semaphore-protocol/contracts` — Semaphore on-chain verifier
-- `openzeppelin-contracts` — Ownable2Step, ECDSA, ERC20
+- `@openzeppelin/contracts` — Ownable2Step, ECDSA, ERC20 (via `lib/openzeppelin-contracts`)
 - `solmate` — Gas-optimized utilities
-- Import remappings defined in `remappings.txt`
+- `@bringid/contracts` — Public API surface (local, in `contracts/`)
+
+**All imports use `@`-prefixed npm-standard paths** (not bare prefixes). This ensures `contracts/` files work in both Foundry (via remappings) and Hardhat (via node_modules resolution):
+- `@bringid/contracts/...` → `contracts/`
+- `@semaphore-protocol/contracts/...` → `node_modules/@semaphore-protocol/contracts`
+- `@openzeppelin/contracts/...` → `lib/openzeppelin-contracts/contracts/`
+
+Import remappings are defined in `remappings.txt`.
 
 ### CI
 
 GitHub Actions (`.github/workflows/test.yml`). Triggered on push, PR, and manual dispatch. Steps:
 
 1. **Install** — Foundry toolchain + `yarn install --frozen-lockfile` (for `@semaphore-protocol` and other npm deps)
-2. **Format check** — `forge fmt --check`
+2. **Format check** — `forge fmt --check contracts/ test/ script/`
 3. **Build** — `forge build --sizes` (uses `ci` profile, `via_ir = false`)
-4. **Build (via-ir, src only)** — `FOUNDRY_PROFILE=default forge build --skip test --skip script` (uses default profile, `via_ir = true`). Compiles only `src/` contracts and their imports (lightweight Semaphore interfaces). Skips test/script to avoid compiling heavy Semaphore implementation (`Semaphore.sol`, `SemaphoreVerifier.sol`, `PoseidonT3`).
+4. **Build (via-ir, contracts only)** — `FOUNDRY_PROFILE=default forge build --skip test --skip script` (uses default profile, `via_ir = true`). Compiles only `contracts/` source and their imports (lightweight Semaphore interfaces). Skips test/script to avoid compiling heavy Semaphore implementation (`Semaphore.sol`, `SemaphoreVerifier.sol`, `PoseidonT3`).
 5. **Upload artifacts** — Uploads via-ir compiled `CredentialRegistry.sol/` and `DefaultScorer.sol/` as GitHub Actions artifacts. Download with `gh run download <run-id> -n via-ir-contracts`.
 6. **Tests** — `forge test --ffi -vvv` (uses `ci` profile, `via_ir = false`)
 

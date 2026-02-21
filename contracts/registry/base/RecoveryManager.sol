@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import "../Errors.sol";
-import "../Events.sol";
+import "@bringid/contracts/interfaces/Errors.sol";
+import "@bringid/contracts/interfaces/Events.sol";
 import {AttestationVerifier} from "./AttestationVerifier.sol";
 
 /// @title RecoveryManager

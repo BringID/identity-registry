@@ -157,9 +157,9 @@ Score is now on `DefaultScorer`. Semaphore group IDs are managed internally via 
 ```
 The `issuedAt` timestamp is signed by the verifier. The contract enforces `block.timestamp <= issuedAt + attestationValidityDuration` (default 30 minutes, configurable via `setAttestationValidityDuration()`).
 
-**`CredentialGroupProof`** — added `appId`:
+**`CredentialProof`** — added `appId`:
 ```diff
- struct CredentialGroupProof {
+ struct CredentialProof {
      uint256 credentialGroupId;
 +    uint256 appId;
      ISemaphore.SemaphoreProof semaphoreProof;
@@ -231,16 +231,16 @@ The `issuedAt` timestamp is signed by the verifier. The contract enforces `block
 
 The constructor now deploys a `DefaultScorer` automatically and adds the provided address as the first trusted verifier.
 
-### Error messages
+### Custom errors
 
-All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered"`, `"BID::app not active"`). If your integration matches on revert reason strings, update them accordingly.
+All revert conditions now use custom errors (e.g. `NotRegistered()`, `AppNotActive()`, `AlreadyRegistered()`) instead of string-based `require` messages. Custom errors are defined in `@bringid/contracts/Errors.sol`. If your integration matches on revert selectors, update to the new custom error selectors.
 
 ## Quick Migration Checklist
 
 - [ ] Update contract addresses to Base Sepolia values above
 - [ ] Update ABI imports — `ICredentialRegistry`, events, and structs have changed
 - [ ] Add `appId` and `issuedAt` to all `Attestation` structs
-- [ ] Add `appId` to all `CredentialGroupProof` structs
+- [ ] Add `appId` to all `CredentialProof` structs
 - [ ] Rename `idHash` → `credentialId` in attestation construction
 - [ ] Replace `joinGroup()` calls with `registerCredential()`
 - [ ] Replace `validateProof()` with `submitProof()` or `verifyProof()` (view)
@@ -251,4 +251,4 @@ All `require` error strings now use a `BID::` prefix (e.g. `"BID::not registered
 - [ ] Account for `credentialGroupId` in `CredentialRecord` — tracks which group within the family
 - [ ] For group changes within a family, use `initiateRecovery`/`executeRecovery` (not `renewCredential`)
 - [ ] If listening to events, update to new event names and signatures
-- [ ] If matching on revert reason strings, update to `BID::` prefixed messages
+- [ ] If matching on revert selectors, update to custom errors defined in `@bringid/contracts/Errors.sol`

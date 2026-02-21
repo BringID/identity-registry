@@ -2,13 +2,13 @@
 pragma solidity ^0.8.23;
 
 import {Test} from "forge-std/Test.sol";
-import {CredentialRegistry} from "../../src/registry/CredentialRegistry.sol";
-import {DefaultScorer} from "../../src/scoring/DefaultScorer.sol";
-import {ISemaphore} from "semaphore-protocol/interfaces/ISemaphore.sol";
-import {ISemaphoreVerifier} from "semaphore-protocol/interfaces/ISemaphoreVerifier.sol";
-import {SemaphoreVerifier} from "semaphore-protocol/base/SemaphoreVerifier.sol";
-import {Semaphore} from "semaphore-protocol/Semaphore.sol";
-import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
+import {CredentialRegistry} from "../../contracts/registry/CredentialRegistry.sol";
+import {DefaultScorer} from "@bringid/contracts/scoring/DefaultScorer.sol";
+import {ISemaphore} from "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
+import {ISemaphoreVerifier} from "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
+import {SemaphoreVerifier} from "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
+import {Semaphore} from "@semaphore-protocol/contracts/Semaphore.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {RegistryHandler} from "./RegistryHandler.sol";
 
 /// @notice Invariant tests for CredentialRegistry critical properties.

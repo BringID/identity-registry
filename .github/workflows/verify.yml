@@ -43,7 +43,7 @@ jobs:
         run: |
           forge verify-contract \
             ${{ inputs.registry_address }} \
-            src/registry/CredentialRegistry.sol:CredentialRegistry \
+            contracts/registry/CredentialRegistry.sol:CredentialRegistry \
             --chain ${{ inputs.chain_id }} \
             --constructor-args $(cast abi-encode "constructor(address,address)" "${{ inputs.semaphore_address }}" "${{ inputs.trusted_verifier_address }}") \
             --etherscan-api-key "$ETHERSCAN_API_KEY" \
@@ -68,7 +68,7 @@ jobs:
         run: |
           forge verify-contract \
             ${{ steps.scorer.outputs.address }} \
-            src/scoring/DefaultScorer.sol:DefaultScorer \
+            contracts/scoring/DefaultScorer.sol:DefaultScorer \
             --chain ${{ inputs.chain_id }} \
             --constructor-args $(cast abi-encode "constructor(address)" "${{ steps.scorer_owner.outputs.address }}") \
             --etherscan-api-key "$ETHERSCAN_API_KEY" \

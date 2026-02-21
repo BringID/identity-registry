@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {ScorerFactory} from "../src/scoring/ScorerFactory.sol";
+import {ScorerFactory} from "@bringid/contracts/scoring/ScorerFactory.sol";
 import {Script, console} from "forge-std/Script.sol";
 
 contract DeployScorerFactory is Script {

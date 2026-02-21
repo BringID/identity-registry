@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.23;
+
+import {CredentialProof} from "../interfaces/Types.sol";
+import {BringIDGated} from "../BringIDGated.sol";
+
+/// @title SimpleAirdrop
+/// @notice Example airdrop contract demonstrating front-running-resistant proof consumption.
+///         Users submit credential proofs bound to their address via the Semaphore `message`
+///         field. The contract validates the binding before forwarding proofs to the registry,
+///         ensuring that an attacker who copies a proof from the mempool cannot steal the claim.
+/// @dev This is a minimal example — production contracts should add token distribution logic.
+contract SimpleAirdrop is BringIDGated {
+    /// @notice Minimum aggregate score required to claim.
+    uint256 public immutable MIN_SCORE;
+
+    /// @notice Tracks which addresses have already claimed.
+    mapping(address => bool) public claimed;
+
+    /// @notice Thrown when the aggregate proof score is below `MIN_SCORE`.
+    /// @param score The actual score returned by the registry.
+    /// @param minScore The required minimum score.
+    error InsufficientScore(uint256 score, uint256 minScore);
+
+    /// @notice Thrown when an address has already claimed.
+    error AlreadyClaimed();
+
+    /// @notice Emitted when an airdrop claim succeeds.
+    /// @param recipient The address that received the claim.
+    /// @param score The aggregate credential score.
+    event AirdropClaimed(address indexed recipient, uint256 score);
+
+    /// @param registry_ The BringID CredentialRegistry address.
+    /// @param minScore_ Minimum aggregate score to claim.
+    /// @param appId_ The app ID that all proofs must target.
+    constructor(address registry_, uint256 minScore_, uint256 appId_) BringIDGated(registry_, appId_) {
+        MIN_SCORE = minScore_;
+    }
+
+    /// @notice Claims an airdrop by submitting message-bound credential proofs.
+    /// @dev Flow:
+    ///      1. Check recipient hasn't already claimed.
+    ///      2. Validate proofs (app ID, message binding) and submit to registry.
+    ///      3. Check aggregate score meets minimum threshold.
+    ///      4. Mark recipient as claimed.
+    /// @param recipient_ The intended recipient of the airdrop (must match proof message binding).
+    /// @param proofs_ Array of credential group proofs with `message = hash(recipient_)`.
+    function claim(address recipient_, CredentialProof[] calldata proofs_) external {
+        if (claimed[recipient_]) revert AlreadyClaimed();
+
+        uint256 bringIDScore = _submitProofsForRecipient(recipient_, proofs_);
+
+        if (bringIDScore < MIN_SCORE) revert InsufficientScore(bringIDScore, MIN_SCORE);
+
+        claimed[recipient_] = true;
+
+        emit AirdropClaimed(recipient_, bringIDScore);
+    }
+}

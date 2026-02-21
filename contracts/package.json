@@ -1,0 +1,14 @@
+{
+  "name": "@bringid/contracts",
+  "version": "0.1.0",
+  "description": "Solidity interfaces, consumer helpers, and scorer contracts for the BringID Credential Registry",
+  "license": "MIT",
+  "files": [
+    "**/*.sol",
+    "!registry/**"
+  ],
+  "peerDependencies": {
+    "@semaphore-protocol/contracts": "^4.14.0",
+    "@openzeppelin/contracts": "^4.9.0 || ^5.0.0"
+  }
+}
