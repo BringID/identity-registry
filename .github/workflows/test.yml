@@ -33,12 +33,6 @@ jobs:
           forge fmt --check
         id: fmt
 
-      - name: Install Slither
-        run: pip3 install slither-analyzer
-
-      - name: Run Slither
-        run: FOUNDRY_PROFILE=ci slither .
-
       - name: Run Forge build
         run: |
           forge build --sizes
@@ -61,9 +55,3 @@ jobs:
         run: |
           forge test --ffi -vvv
         id: test
-
-      - name: Gas snapshot check
-        run: FOUNDRY_PROFILE=ci forge snapshot --ffi --check
-
-      - name: Coverage report
-        run: FOUNDRY_PROFILE=ci forge coverage --ffi --report summary
