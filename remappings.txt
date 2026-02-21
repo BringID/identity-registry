@@ -3,4 +3,3 @@
 @zk-kit/=node_modules/@zk-kit
 poseidon-solidity/=node_modules/poseidon-solidity
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
-solmate/=lib/solmate/src/
