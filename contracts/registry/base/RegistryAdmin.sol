@@ -3,6 +3,8 @@ pragma solidity 0.8.23;
 
 import "@bringid/contracts/interfaces/Errors.sol";
 import "@bringid/contracts/interfaces/Events.sol";
+import {IScorer} from "@bringid/contracts/interfaces/IScorer.sol";
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {RegistryStorage} from "./RegistryStorage.sol";
 
 /// @title RegistryAdmin
@@ -120,6 +122,7 @@ abstract contract RegistryAdmin is RegistryStorage {
     /// @param scorer_ The new default scorer address (must not be zero).
     function setDefaultScorer(address scorer_) public onlyOwner {
         if (scorer_ == address(0)) revert InvalidScorerAddress();
+        if (!ERC165Checker.supportsInterface(scorer_, type(IScorer).interfaceId)) revert InvalidScorerContract();
         address oldScorer = defaultScorer;
         defaultScorer = scorer_;
         emit DefaultScorerUpdated(oldScorer, scorer_);
