@@ -53,7 +53,8 @@ abstract contract BringIDGated is IBringIDGated {
     }
 
     /// @notice Validates a single proof and submits it to the registry.
-    /// @dev Performs the validation flow: app ID, message binding, and submission.
+    /// @dev Performs the validation flow: message binding and submission.
+    ///      The registry enforces appId matching via scope binding.
     ///      Reverts if any check fails. Does NOT enforce a score threshold — callers handle that.
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param context_ Application-defined context value for scope computation.
@@ -63,13 +64,9 @@ abstract contract BringIDGated is IBringIDGated {
         internal
         returns (uint256 bringIDScore)
     {
-        if (proof_.appId != APP_ID) {
-            revert AppIdMismatch(APP_ID, proof_.appId);
-        }
-
         validateProofRecipient(proof_, recipient_);
 
-        bringIDScore = REGISTRY.submitProof(context_, proof_);
+        bringIDScore = REGISTRY.submitProof(APP_ID, context_, proof_);
     }
 
     /// @notice Validates proofs and submits them to the registry using context = 0.
@@ -87,7 +84,8 @@ abstract contract BringIDGated is IBringIDGated {
     }
 
     /// @notice Validates proofs and submits them to the registry.
-    /// @dev Performs the validation flow: app ID, message binding, and submission.
+    /// @dev Performs the validation flow: message binding and submission.
+    ///      The registry enforces appId matching via scope binding.
     ///      Reverts if any check fails. Does NOT enforce a score threshold — callers handle that.
     /// @param recipient_ The intended recipient (used for message binding validation).
     /// @param context_ Application-defined context value for scope computation.
@@ -97,18 +95,9 @@ abstract contract BringIDGated is IBringIDGated {
         internal
         returns (uint256 bringIDScore)
     {
-        for (uint256 i = 0; i < proofs_.length;) {
-            if (proofs_[i].appId != APP_ID) {
-                revert AppIdMismatch(APP_ID, proofs_[i].appId);
-            }
-            unchecked {
-                ++i;
-            }
-        }
-
         validateProofsRecipient(proofs_, recipient_);
 
-        bringIDScore = REGISTRY.submitProofs(context_, proofs_);
+        bringIDScore = REGISTRY.submitProofs(APP_ID, context_, proofs_);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -148,7 +137,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param proof_ The credential group proof to verify.
     /// @return True if the proof is valid.
     function verifyProof(uint256 context_, CredentialProof calldata proof_) public view returns (bool) {
-        return REGISTRY.verifyProof(context_, proof_);
+        return REGISTRY.verifyProof(APP_ID, context_, proof_);
     }
 
     /// @notice View-only: verifies multiple proofs using this contract's address for scope.
@@ -157,7 +146,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param proofs_ Array of credential group proofs to verify.
     /// @return True if all proofs are valid.
     function verifyProofs(uint256 context_, CredentialProof[] calldata proofs_) public view returns (bool) {
-        return REGISTRY.verifyProofs(context_, proofs_);
+        return REGISTRY.verifyProofs(APP_ID, context_, proofs_);
     }
 
     /// @notice View-only: verifies proofs and returns aggregate score using this contract's address.
@@ -166,7 +155,7 @@ abstract contract BringIDGated is IBringIDGated {
     /// @param proofs_ Array of credential group proofs to verify and score.
     /// @return The total score across all verified credential groups.
     function getScore(uint256 context_, CredentialProof[] calldata proofs_) public view returns (uint256) {
-        return REGISTRY.getScore(context_, proofs_);
+        return REGISTRY.getScore(APP_ID, context_, proofs_);
     }
 
     // ═══════════════════════════════════════════════════════

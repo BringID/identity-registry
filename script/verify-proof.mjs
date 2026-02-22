@@ -70,7 +70,7 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const registryAbi = [
-    "function submitProof(uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
+    "function submitProof(uint256 appId, uint256 context, (uint256 credentialGroupId, uint256 appId, (uint256 merkleTreeDepth, uint256 merkleTreeRoot, uint256 nullifier, uint256 message, uint256 scope, uint256[8] points) semaphoreProof) proof)",
     "function credentialGroups(uint256) view returns (uint8 status, uint256 validityDuration, uint256 familyId)",
     "function appSemaphoreGroups(uint256, uint256) view returns (uint256)",
     "function appSemaphoreGroupCreated(uint256, uint256) view returns (bool)",
@@ -157,12 +157,12 @@ for (const m of members) {
 
 // ── Compute scope ───────────────────────────────────────────────────────────
 
-// scope = keccak256(abi.encode(msg.sender, context))
+// scope = keccak256(abi.encode(appId, msg.sender, context))
 const scope = BigInt(
     ethers.keccak256(
         ethers.AbiCoder.defaultAbiCoder().encode(
-            ["address", "uint256"],
-            [wallet.address, context]
+            ["uint256", "address", "uint256"],
+            [appId, wallet.address, context]
         )
     )
 );
@@ -204,7 +204,7 @@ const proof = {
 
 console.log("\nSending submitProof tx...");
 
-const tx = await registry.submitProof(context, proof);
+const tx = await registry.submitProof(appId, context, proof);
 console.log("Tx hash:", tx.hash);
 
 const receipt = await tx.wait();
